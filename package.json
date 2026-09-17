@@ -1,0 +1,50 @@
+{
+  "name": "jev-mcp",
+  "version": "0.1.0",
+  "description": "MCP server exposing TypeSafe's Jev (System One) as purpose-built judgment tools: verify claims against evidence, screen content for injection, find semantically without embeddings.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Joey Kudish",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jkudish/jev-mcp.git"
+  },
+  "bin": {
+    "jev-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test test/unit.test.mjs",
+    "test:e2e": "node --test test/e2e.test.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "typesafe",
+    "jev",
+    "system-one",
+    "ai",
+    "verification",
+    "guardrails",
+    "semantic-search"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
