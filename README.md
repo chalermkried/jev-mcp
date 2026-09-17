@@ -198,6 +198,10 @@ Jev is TypeSafe's System One model: it returns typed answers with calibrated pro
 | `JEV_MCP_MODEL` | `jev-latest` | Pin a Jev version, e.g. `jev-1.12`. |
 | `TYPESAFE_BASE_URL` | none | Custom API endpoint. |
 
+## Also in the family
+
+Need those judgments to drive a real browser? [Jev Browser](https://github.com/jkudish/jev-browser) gives an agent a task and a URL and lets Jev pick the actions: click, type, select, stop. It uses the same judgment style this server exposes. The npm package is [@jkudish/jev-browser](https://www.npmjs.com/package/@jkudish/jev-browser).
+
 ## Development
 
 ```bash
