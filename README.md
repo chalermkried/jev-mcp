@@ -1,49 +1,94 @@
-# jev-mcp
+# Jev MCP
 
 [![CI](https://github.com/jkudish/jev-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jkudish/jev-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-jev-mcp turns TypeSafe's [Jev](https://docs.typesafe.ai) model into three MCP tools your agents can call: verify claims against evidence, screen content before it enters context, and rank candidates by meaning. Each call returns typed verdicts with probabilities, in roughly 100 to 500 ms.
+Fast, cheap, typed judgments from TypeSafe's Jev model, as MCP tools.
 
-Jev answers typed questions with calibrated probabilities instead of generating text. That makes it a good fit for the checks agents usually skip because a frontier model is too slow or too expensive to run on every page, claim, or candidate list.
+Give your agent three judgment tools: `jev_verify` checks claims against evidence, `jev_screen` judges content before it enters context, `jev_find` ranks candidates by meaning with no embeddings. Each call returns verdicts with probability distributions and confidence in roughly 150 to 500 ms, for a fraction of a cent. The cheap mechanical checks agents otherwise skip, because a frontier model is too slow to run on every page, claim, or candidate list.
+
+Things it has done in real use:
+
+- Caught a contradicted claim at confidence 1.0 against a city ordinance.
+- Blocked a pricing page carrying a hidden "ignore your instructions" note at injection probability 0.99, while still reading it as a real page.
+- Ranked three files for "how caching affects infrastructure costs" and picked the right one at probability 1.0.
+
+This is early software. Expect rough edges. Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Install
 
 Requires Node.js 20 or newer and a TypeSafe API key from [console.typesafe.ai/settings/keys](https://console.typesafe.ai/settings/keys).
 
-```bash
-export TYPESAFE_API_KEY="ts_..."
+### Let an agent install it for you
+
+Paste this into your coding agent:
+
+```text
+Install the Jev MCP server for me. The package is @jkudish/jev-mcp on npm and the server
+command is `npx -y @jkudish/jev-mcp`; register it as an MCP server with your client. Check whether
+TYPESAFE_API_KEY is already set in the server environment; if not, walk me through setting it up without
+pasting the key into the chat (I can create one at console.typesafe.ai/settings/keys). When it's
+registered, ask if I'd like to try a claim verification, and when we do, show me the verdicts and cost.
+Full instructions: https://github.com/jkudish/jev-mcp#readme
 ```
 
-Amp:
+From npm:
 
 ```bash
-amp mcp add jev -- npx -y github:jkudish/jev-mcp
+npx -y @jkudish/jev-mcp
 ```
 
-Claude Code:
+### Amp
 
 ```bash
-claude mcp add jev -- npx -y github:jkudish/jev-mcp
+amp mcp add jev -- npx -y @jkudish/jev-mcp
 ```
 
-Cursor and other MCP clients:
+### Claude Code
+
+```bash
+claude mcp add jev -- npx -y @jkudish/jev-mcp
+```
+
+### Codex (`~/.codex/config.toml`)
+
+```toml
+[mcp_servers.jev]
+command = "npx"
+args = ["-y", "@jkudish/jev-mcp"]
+```
+
+### OpenCode (`opencode.json`)
+
+```json
+{
+  "mcp": {
+    "jev": {
+      "type": "local",
+      "command": ["npx", "-y", "@jkudish/jev-mcp"],
+      "environment": { "TYPESAFE_API_KEY": "ts_..." }
+    }
+  }
+}
+```
+
+### Any other MCP client
 
 ```json
 {
   "mcpServers": {
     "jev": {
       "command": "npx",
-      "args": ["-y", "github:jkudish/jev-mcp"],
+      "args": ["-y", "@jkudish/jev-mcp"],
       "env": { "TYPESAFE_API_KEY": "ts_..." }
     }
   }
 }
 ```
 
-Some MCP clients filter the environment before spawning servers, which silently drops `TYPESAFE_API_KEY`. If the server reports a missing key, pass the env explicitly as shown above, or with Amp: `amp mcp add jev --env TYPESAFE_API_KEY=ts_... -- npx -y github:jkudish/jev-mcp`.
+Some MCP clients filter the environment before spawning servers, which silently drops `TYPESAFE_API_KEY`. If the server reports a missing key, pass it explicitly as shown above.
 
-## Tools
+## The tools
 
 ### jev_verify
 
@@ -61,7 +106,7 @@ Check each claim in a report, PR description, or agent brief against the sources
 ```
 
 ```jsonc
-// live result from jev-latest, abridged
+// live result, abridged
 {
   "summary": { "verified": 1, "contradicted": 1, "unsupported": 0, "needs_review": 0 },
   "results": [
@@ -90,14 +135,15 @@ Judge fetched or pasted text before an agent reads it. One call returns the prob
 ```
 
 ```jsonc
-// live result from jev-latest
+// live result
 {
   "probabilities": { "injection": 0.99, "substance": 0.97, "relevance": 0.97 },
   "recommendation": { "action": "block", "reason": "injection probability 0.99 >= block threshold 0.75" }
 }
 ```
 
-- The recommendation is one of `pass`, `review`, `block`, or `skip`. Low substance or relevance yields `skip`: the page is not worth reading.
+- The recommendation is advisory: `pass`, `review`, `block`, or `skip`. The server never blocks on its own; enforcement stays with the calling agent.
+- Low substance or relevance yields `skip`: the page is not worth reading.
 - `block_at` (default `0.75`) and `review_at` (default `0.25`) are thresholds on the injection probability. Both are parameters.
 - Pattern from the [guardrails cookbook](https://docs.typesafe.ai/cookbooks/llm_guardrails).
 
@@ -119,7 +165,7 @@ Rank candidates against a plain-language query. No embeddings, no index to maint
 ```
 
 ```jsonc
-// live result from jev-latest, abridged
+// live result, abridged
 {
   "exists": 0.99,
   "exists_verdict": "answered",
@@ -134,9 +180,13 @@ Rank candidates against a plain-language query. No embeddings, no index to maint
 - Up to 250 candidates per call. Candidate texts are truncated at 2,000 characters.
 - Pattern from the [semantic-find cookbook](https://docs.typesafe.ai/cookbooks/semantic_find).
 
+## How the answers work
+
+Jev is TypeSafe's System One model: it returns typed answers with calibrated probability distributions, not generated text. A verify call is a Choice over supports / contradicts / says_nothing, so you see the whole distribution, not one label. A screen call is a set of yes/no probabilities. A find call is a Choice over your candidate ids plus an existence check. Code maps the answers to verdicts and actions; policy stays with you.
+
 ## Limits and tuning
 
-- Thresholds in this server (`auto_accept`, `block_at`, `review_at`, and the exists cutoffs) are starting points taken from the TypeSafe cookbooks. Tune them against your own data before you enforce them. See [how TypeSafe reports confidence](https://docs.typesafe.ai/confidence.md).
+- Thresholds (`auto_accept`, `block_at`, `review_at`, exists cutoffs) are starting points from the TypeSafe cookbooks. Tune them against your own data before you enforce them. See [how TypeSafe reports confidence](https://docs.typesafe.ai/confidence.md).
 - Jev is calibrated, not infallible. Typed output guarantees the interface, not the truth. Keep policy in code and escalate low-confidence results to a person or a bigger model.
 - Every result includes token usage, so you can see what each judgment costs.
 
@@ -154,10 +204,10 @@ Rank candidates against a plain-language query. No embeddings, no index to maint
 npm install
 npm run build
 npm test            # unit tests, no API key needed
-npm run test:e2e    # live API tests, requires TYPESAFE_API_KEY
+npm run test:e2e    # live API tests; requires TYPESAFE_API_KEY
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for pull-request expectations.
+See [CONTRIBUTING.md](CONTRIBUTING.md). To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 
