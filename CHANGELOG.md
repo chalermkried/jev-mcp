@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.0
+
+- OpenRouter support: with only an `OPENROUTER_API_KEY`, all judgments route through OpenRouter's Decisions API (alpha) at the same pricing; `JEV_PROVIDER` forces `typesafe` or `openrouter`. `jev-latest` maps to `typesafe/jev-1.13` there.
+- Results now report the transport used (`provider`, resolved `model`).
+
 ## 0.1.0
 
 Initial release, published to npm as `@jkudish/jev-mcp` (the unscoped `jev-mcp` name belongs to another project).

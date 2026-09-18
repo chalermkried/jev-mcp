@@ -194,9 +194,15 @@ Jev is TypeSafe's System One model: it returns typed answers with calibrated pro
 
 | Env var | Default | Purpose |
 | --- | --- | --- |
-| `TYPESAFE_API_KEY` | none | Required. |
-| `JEV_MCP_MODEL` | `jev-latest` | Pin a Jev version, e.g. `jev-1.12`. |
-| `TYPESAFE_BASE_URL` | none | Custom API endpoint. |
+| `TYPESAFE_API_KEY` | none | TypeSafe direct. Default provider when set. |
+| `OPENROUTER_API_KEY` | none | OpenRouter `sk-or-` key; used when `TYPESAFE_API_KEY` is absent. |
+| `JEV_PROVIDER` | `auto` | Force `typesafe` or `openrouter` instead of auto-detection. |
+| `JEV_MCP_MODEL` | `jev-latest` | Pin a Jev version, e.g. `jev-1.12`, or `typesafe/jev-1.13` on OpenRouter. |
+| `TYPESAFE_BASE_URL` | none | Custom direct endpoint (origin only; the SDK appends its route). |
+
+### OpenRouter
+
+If you already have an OpenRouter key, that is all you need: with no `TYPESAFE_API_KEY` present, every call goes through OpenRouter's Decisions API at identical pricing. The endpoint is alpha and adds a hop, and OpenRouter serves pinned versions rather than a `latest` alias, so the default `jev-latest` maps to `typesafe/jev-1.13` there. Direct TypeSafe remains the recommended default when you have both keys.
 
 ## Also in the family
 

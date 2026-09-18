@@ -10,7 +10,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { choice, noul, TypeSafeClient } from "@typesafe-ai/sdk";
+import { choice, noul } from "@typesafe-ai/sdk";
 import { z } from "zod";
 import {
   ensureUniqueIds,
@@ -28,29 +28,10 @@ const MODEL = process.env.JEV_MCP_MODEL ?? "jev-latest";
 
 const server = new McpServer({ name: "jev-mcp", version: "0.1.0" });
 
-// The TypeSafe client reads TYPESAFE_API_KEY from the environment.
-const client = new TypeSafeClient(
-  process.env.TYPESAFE_BASE_URL ? { baseURL: process.env.TYPESAFE_BASE_URL } : undefined,
-);
-
-type JevCall = (payload: {
-  state: unknown;
-  questions: Record<string, unknown>;
-  model?: string;
-}) => Promise<{
-  answers: Record<string, any>;
-  usage: { input_tokens?: number | null; output_tokens?: number | null };
-}>;
+import { askJev as askProvider } from "./provider.js";
 
 async function askJev(state: unknown, questions: Record<string, unknown>) {
-  const response = await (client.systemOne as unknown as JevCall)({ state, questions, model: MODEL });
-  return {
-    answers: response.answers,
-    usage: {
-      input_tokens: response.usage?.input_tokens ?? 0,
-      output_tokens: response.usage?.output_tokens ?? 0,
-    },
-  };
+  return askProvider(state, questions, MODEL);
 }
 
 const text = (payload: unknown) => ({
@@ -148,7 +129,7 @@ server.registerTool(
       evidence,
     };
 
-    const { answers, usage } = await askJev(state, questions);
+    const { answers, usage, provider, model } = await askJev(state, questions);
 
     const results = claimItems.map((claim) => {
       const relation = answers[`relation_${claim.id}`];
@@ -168,7 +149,8 @@ server.registerTool(
 
     return text({
       tool: "jev_verify",
-      model: MODEL,
+      model: model,
+      provider,
       auto_accept: autoAccept,
       summary: {
         verified: results.filter((r) => r.verdict === "verified").length,
@@ -229,7 +211,7 @@ server.registerTool(
     }
 
     const state = { content, purpose: purpose ?? null };
-    const { answers, usage } = await askJev(state, questions);
+    const { answers, usage, provider, model } = await askJev(state, questions);
 
     const injection = answers.injection?.noul ?? 0;
     const substance = answers.substance?.noul ?? undefined;
@@ -239,7 +221,8 @@ server.registerTool(
 
     return text({
       tool: "jev_screen",
-      model: MODEL,
+      model: model,
+      provider,
       probabilities: { injection, substance, relevance: relevance ?? null },
       thresholds: { block_at: blockAt, review_at: reviewAt },
       recommendation,
@@ -284,7 +267,7 @@ server.registerTool(
     };
 
     const state = { query, candidates };
-    const { answers, usage } = await askJev(state, questions);
+    const { answers, usage, provider, model } = await askJev(state, questions);
 
     const probabilities = answers.best?.probabilities ?? {};
     const ranked = rankCandidates(candidates, probabilities).slice(0, topK);
@@ -292,7 +275,8 @@ server.registerTool(
 
     return text({
       tool: "jev_find",
-      model: MODEL,
+      model: model,
+      provider,
       query,
       exists,
       exists_verdict: existsVerdict(exists),
