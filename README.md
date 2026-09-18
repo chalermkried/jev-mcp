@@ -208,6 +208,10 @@ If you already have an OpenRouter key, that is all you need: with no `TYPESAFE_A
 
 Need those judgments to drive a real browser? [Jev Browser](https://github.com/jkudish/jev-browser) gives an agent a task and a URL and lets Jev pick the actions: click, type, select, stop. It uses the same judgment style this server exposes. The npm package is [@jkudish/jev-browser](https://www.npmjs.com/package/@jkudish/jev-browser).
 
+## Sponsoring
+
+If you find Jev MCP useful, consider becoming a [sponsor](https://github.com/sponsors/jkudish) or [donating](https://stripe.com/@jkudish).
+
 ## Development
 
 ```bash
