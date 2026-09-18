@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0
 
 - New `jev_classify` tool: assign up to 64 items to a shared catalog of up to 250 classes in one batched request (catalog sent once, one Choice per item). Per-item distribution, confidence, winner margin, and an auto-versus-review decision gated on both top probability (default 0.85) and margin (default 0.5). Caller IDs are preserved verbatim (opaque internal keys on the wire); the catalog is sent once in shared state with each item in its own question; malformed responses surface as invalid_response rather than uncertainty; batches are capped at an 8,000 item-class budget.
 
