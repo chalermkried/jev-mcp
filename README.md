@@ -282,16 +282,25 @@ One bounded decision, 2-6 candidates, evidence, and explicit priorities. Jev ret
 
 ### jev_rerank
 
-Score every candidate's relevance to a query and get them back sorted. Unlike `jev_find`, which picks one best answer, rerank gives each candidate its own relevance probability, so the whole ordering survives. TypeSafe's rerank cookbook reports that on the CLERC benchmark this pattern lifted top-1 from 5% to 18% and top-10 from 38% to 62%.
+Score every candidate's relevance to a query and get them back sorted. You bring the candidates (file contents, database rows, search hits); Jev scores and sorts what you hand it. Unlike `jev_find`, which picks one best answer, rerank gives each candidate its own relevance probability, so the whole ordering survives. TypeSafe's rerank cookbook reports that on the CLERC benchmark this pattern lifted top-1 from 5% to 18% and top-10 from 38% to 62%.
 
 ```jsonc
 // arguments
 {
-  "query": "which file handles retry behavior",
+  "query": "why did our bandwidth charges triple",
   "candidates": [
-    { "id": "src/api/retry.ts", "text": "Retries failed requests with exponential backoff, up to 5 attempts, honoring Retry-After." },
-    { "id": "src/api/auth.ts", "text": "Refreshes OAuth tokens when they expire and stores them in the system keychain." },
-    { "id": "src/api/client.ts", "text": "The client sends requests and parses responses. It knows nothing about retries." }
+    {
+      "id": "infra/main.tf",
+      "text": "resource \"aws_instance\" \"api\" {\n  count         = 3 # always-on\n  instance_type = \"m5.large\"\n}"
+    },
+    {
+      "id": "src/cache.ts",
+      "text": "// CDN cache control\nexport const CDN_TTL_SECONDS = 60; // was 86400 until the perf sprint"
+    },
+    {
+      "id": "docs/runbook.md",
+      "text": "# On-call runbook\n\nEscalation contacts and the weekly rotation schedule."
+    }
   ]
 }
 ```
@@ -300,16 +309,19 @@ Score every candidate's relevance to a query and get them back sorted. Unlike `j
 // live result, abridged
 {
   "ranked": [
-    { "rank": 1, "id": "src/api/retry.ts", "relevance": 0.79 },
-    { "rank": 2, "id": "src/api/client.ts", "relevance": 0.14 },
-    { "rank": 3, "id": "src/api/auth.ts", "relevance": 0.07 }
+    { "rank": 1, "id": "src/cache.ts", "relevance": 0.74 },
+    { "rank": 2, "id": "infra/main.tf", "relevance": 0.23 },
+    { "rank": 3, "id": "docs/runbook.md", "relevance": 0.03 }
   ]
 }
 ```
 
+Each candidate is a file: `id` is any handle you choose, echoed back verbatim, and `text` is the file's contents (truncated at 2,000 characters). No candidate contains the words bandwidth or triple. A shorter CDN TTL means more origin fetches, so `src/cache.ts` ranks first on meaning alone; the always-on VMs are cloud spend too, just not bandwidth.
+
 - One relevance probability per candidate, all in a single request; cost scales with the number of candidates, not with candidate-pairs.
 - Candidate ids are preserved verbatim. If any answer comes back malformed, the whole ranking is reported `invalid_response` rather than sorting a missing score as a confident zero.
 - Up to 250 candidates and a 100,000-character aggregate budget; split larger batches.
+- Ranking whole documents? Chunk them into ~2,000-character candidates with distinct ids (`report.md#c1`, `report.md#c2`) and merge per document by its best chunk's score.
 - Use `jev_find` when you want one best answer plus an existence check; use `jev_rerank` when the ordering itself is the deliverable. See the [rerank cookbook](https://docs.typesafe.ai/cookbooks).
 
 ### jev_compare
