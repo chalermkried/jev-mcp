@@ -122,3 +122,80 @@ test("jev_extract keeps a positive pick from a truncated universe provisional, n
     assert.ok(field.candidates_truncated);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// jev_decide: Choice contract enforcement with controlled answers.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const DECIDE_ARGS = {
+  decision: "Which database should the service use?",
+  evidence: "The service is a small CRUD API with one table and no concurrent writers.",
+  priorities: "Minimize operational overhead.",
+  candidates: [
+    { id: "postgres", description: "A full relational database server" },
+    { id: "sqlite", description: "An embedded database stored in one file" },
+  ],
+  requirements: ["Runs without a separate server process"],
+};
+
+const REC_KEYS = ["option_0", "option_1", "ask_user", "investigate", "none"];
+const CHECK_KEYS = ["supported", "contradicted", "unknown"];
+
+test("jev_decide recommendation that is not the argmax is invalid_response", async () => {
+  await withMock(() => ({
+    // option_1 is chosen while option_0 holds the top probability.
+    recommendation: { choice: "option_1", confidence: 0.99, probabilities: { option_0: 0.9, option_1: 0.04, ask_user: 0.02, investigate: 0.02, none: 0.02 } },
+    check_0_0: pick("supported", CHECK_KEYS),
+  }), async (client) => {
+    const result = await client.callTool({ name: "jev_decide", arguments: DECIDE_ARGS });
+    const body = payload(result);
+    assert.equal(body.recommendation.status, "invalid_response");
+    assert.equal(body.recommendation.selected, null);
+    assert.equal(body.recommendation.probabilities, null);
+  });
+});
+
+test("jev_decide requirement check that is not the argmax is invalid_response", async () => {
+  await withMock(() => ({
+    recommendation: pick("option_1", REC_KEYS),
+    // "contradicted" is chosen while "supported" holds the top probability.
+    check_0_0: { choice: "contradicted", confidence: 0.9, probabilities: { supported: 0.8, contradicted: 0.1, unknown: 0.1 } },
+  }), async (client) => {
+    const result = await client.callTool({ name: "jev_decide", arguments: DECIDE_ARGS });
+    const body = payload(result);
+    assert.equal(body.checks[0].answer, "invalid_response");
+  });
+});
+
+test("jev_decide normalizes non-finite confidence to null without discarding the pick", async () => {
+  await withMock(() => ({
+    recommendation: { ...pick("option_1", REC_KEYS), confidence: 1.7 },
+    check_0_0: pick("supported", CHECK_KEYS),
+  }), async (client) => {
+    const result = await client.callTool({ name: "jev_decide", arguments: DECIDE_ARGS });
+    const body = payload(result);
+    assert.equal(body.recommendation.selected, "sqlite");
+    assert.equal(body.recommendation.confidence, null);
+    assert.equal(body.checks[0].answer, "supported");
+  });
+});
+
+test("jev_decide accepts a candidate id named constructor", async () => {
+  await withMock(() => ({
+    recommendation: pick("option_0", REC_KEYS),
+  }), async (client) => {
+    const result = await client.callTool({
+      name: "jev_decide",
+      arguments: {
+        ...DECIDE_ARGS,
+        candidates: [
+          { id: "constructor", description: "An option whose id is an Object prototype key" },
+          { id: "sqlite", description: "An embedded database stored in one file" },
+        ],
+      },
+    });
+    const body = payload(result);
+    assert.equal(body.recommendation.selected, "constructor");
+    assert.equal(body.recommendation.escaped, false);
+  });
+});

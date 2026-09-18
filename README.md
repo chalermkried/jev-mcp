@@ -322,7 +322,7 @@ Each candidate is a file: `id` is any handle you choose, echoed back verbatim, a
 - Candidate ids are preserved verbatim. If any answer comes back malformed, the whole ranking is reported `invalid_response` rather than sorting a missing score as a confident zero.
 - Up to 250 candidates and a 100,000-character aggregate budget; split larger batches.
 - Ranking whole documents? Chunk them into ~2,000-character candidates with distinct ids (`report.md#c1`, `report.md#c2`) and merge per document by its best chunk's score.
-- Use `jev_find` when you want one best answer plus an existence check; use `jev_rerank` when the ordering itself is the deliverable. See the [rerank cookbook](https://docs.typesafe.ai/cookbooks).
+- Use `jev_find` when you want one best answer plus an existence check; use `jev_rerank` when the ordering itself is the deliverable. See the [rerank cookbook](https://docs.typesafe.ai/cookbooks/rerank_typesafe).
 
 ### jev_compare
 
@@ -349,6 +349,7 @@ Judge how two passages relate: `same_fact`, `contradicts`, or `different_facts`,
 ```
 
 - Per-aspect judgments are independent and may disagree with the overall relation; that disagreement is signal, not noise.
+- Each passage is capped at 20,000 characters; requests above that are rejected up front.
 - At aspect granularity, `different_facts` explicitly means the passages do not both make a comparable assertion about the aspect: at least one does not address it, or their mentions do not overlap.
 - The request supplies no evidence beyond the two passages, so a `same_fact` verdict means they agree with each other, not that they are true.
 - Use for source reconciliation, changelog-versus-code drift, or checking that a summary matches its source.
@@ -380,11 +381,11 @@ Pull structured fields out of a document with your regex and Jev's judgment. You
 }
 ```
 
-- A field whose regex matches nothing comes back `not_found` with reason `no_regex_matches` and never reaches the model: no hallucinated value. In a call where every field is a zero-match, no API call is made at all. Jev can also pick `none_of_them` when every regex match is wrong for the field; that `not_found` is model-judged and confidence-gated like any pick.
+- A field whose regex matches nothing comes back `not_found` with reason `no_regex_matches` and never reaches the model: no hallucinated value. In a call where every field is a zero-match, no API call is made at all. Jev can also pick `none_of_them` when every regex match is wrong for the field; that `not_found` is model-judged and gated on top probability and winner margin like any pick.
 - Values are verbatim document substrings, exactly as the regex matched them. The model picks among matches; it never writes a value.
-- Ambiguous picks come back flagged `review` with the value still attached; treat a `review` value as provisional, not extracted. If the regex found more matches than the cap allows, or skipped matches longer than 2,000 characters, the field can never be `auto` and a `none_of_them` pick can never be a definite `not_found`: it returns `review` with reason `candidate_limit` and `candidates_truncated` or `matches_skipped_too_long` set, because the best value may be among the unsent matches. A malformed model answer is still `invalid_response`, not a semantic outcome.
+- Ambiguous picks come back flagged `review` with the value still attached; treat a `review` value as provisional, not extracted. If the regex found more matches than the cap allows, or skipped matches longer than 2,000 characters, the field can never be `auto` and a `none_of_them` pick can never be a definite `not_found`: it returns `review` with reason `candidate_limit` and `candidates_truncated` or `matches_skipped_too_long` set, because the best value may be among the unsent matches. When every match is over 2,000 characters and none is eligible at all, the reason is `matches_too_long` instead. A malformed model answer is still `invalid_response`, not a semantic outcome.
 - Invalid patterns and regexes that time out (they run in a sandboxed worker with a 1-second deadline, so a pathological pattern cannot hang the server) return `invalid_pattern` with the error instead of failing the whole call.
-- Up to 32 fields per call and 20 candidate matches per field, judged in one request within a 50,000-character aggregate budget.
+- Up to 32 fields per call and 20 candidate matches per field, judged in one request. The document is capped at 50,000 characters, and the candidate match text at 50,000 characters in aggregate.
 
 ## How the answers work
 

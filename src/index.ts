@@ -17,6 +17,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { choice, noul } from "@typesafe-ai/sdk";
 import { z } from "zod";
+import { createRequire } from "node:module";
 import {
   classificationDecision,
   contradictsRecommendation,
@@ -51,7 +52,10 @@ import {
 
 const MODEL = process.env.JEV_MCP_MODEL ?? "jev-latest";
 
-const server = new McpServer({ name: "jev-mcp", version: "0.1.0" });
+// Resolved at runtime so the MCP handshake version always matches the package.
+const { version: packageVersion } = createRequire(import.meta.url)("../package.json") as { version: string };
+
+const server = new McpServer({ name: "jev-mcp", version: packageVersion });
 
 import { askJev as askProvider } from "./provider.js";
 
@@ -514,7 +518,7 @@ server.registerTool(
     const seenIds = new Set<string>();
     for (const c of candidates) {
       if (seenIds.has(c.id)) throw new Error("Duplicate candidate id: " + c.id);
-      if (includeHatches && c.id in DECIDE_ESCAPE_HATCHES) {
+      if (includeHatches && Object.hasOwn(DECIDE_ESCAPE_HATCHES, c.id)) {
         throw new Error('Candidate id "' + c.id + '" collides with an escape hatch; rename it or set escape_hatches: false.');
       }
       seenIds.add(c.id);
@@ -564,7 +568,8 @@ server.registerTool(
     const expectedCheckKeys = new Set(["supported", "contradicted", "unknown"]);
 
     // classify-grade validation: exact keys, finite [0,1] probabilities summing
-    // to one, valid choice. Malformed responses are never semantic outcomes.
+    // to one, chosen key is the argmax, confidence finite or null. Malformed
+    // responses are never semantic outcomes.
     const validateChoice = (answer: any, expected: Set<string>) => {
       if (!answer || typeof answer.choice !== "string" || !expected.has(answer.choice)) return null;
       const probabilities: Record<string, number> = answer.probabilities ?? {};
@@ -574,9 +579,17 @@ server.registerTool(
         keys.length !== expected.size ||
         !keys.every((k) => expected.has(k)) ||
         !values.every((p) => Number.isFinite(p) && p >= 0 && p <= 1) ||
-        Math.abs(values.reduce((a: number, b: number) => a + b, 0) - 1) > 0.01
-      ) return null;
-      return answer as { choice: string; confidence: number; probabilities: Record<string, number> };
+        Math.abs(values.reduce((a: number, b: number) => a + b, 0) - 1) > 0.01 ||
+        // Choice contract: the chosen option must be the argmax.
+        probabilities[answer.choice] < Math.max(...values) - 1e-9
+      )
+        return null;
+      const rawConfidence = answer.confidence;
+      const confidence =
+        typeof rawConfidence === "number" && Number.isFinite(rawConfidence) && rawConfidence >= 0 && rawConfidence <= 1
+          ? rawConfidence
+          : null;
+      return { choice: answer.choice, confidence, probabilities };
     };
 
     const rec = validateChoice(answers.recommendation, expectedRecKeys);
