@@ -154,3 +154,57 @@ export function contradictsRecommendation(
     .filter((c) => c.candidate === recommended && c.answer === "contradicted")
     .map((c) => c.requirement);
 }
+
+/** Max candidates for jev_rerank, bounded by the Choice option limit. */
+export const MAX_RERANK_CANDIDATES = 250;
+
+/** Aggregate candidate-text budget for jev_rerank (characters, across all candidates). */
+export const MAX_RERANK_TOTAL_CHARS = 100_000;
+
+/** Max aspects for jev_compare (independent per-aspect Choices). */
+export const MAX_COMPARE_ASPECTS = 10;
+
+/** Max fields for jev_extract per call. */
+export const MAX_EXTRACT_FIELDS = 32;
+
+/** Max regex candidates per field before the set is flagged truncated. */
+export const MAX_EXTRACT_CANDIDATES = 20;
+
+/** A single regex match longer than this is skipped and flagged, never silently truncated. */
+export const MAX_EXTRACT_CANDIDATE_CHARS = 2_000;
+
+/** Aggregate candidate-preview budget for jev_extract (characters, across all fields). */
+export const MAX_EXTRACT_TOTAL_CHARS = 50_000;
+
+/** Hard per-field deadline for caller-supplied regex execution in a worker. */
+export const REGEX_TIMEOUT_MS = 1_000;
+
+/** The three pairwise relations jev_compare judges overall. */
+export const COMPARE_RELATIONS: Record<string, string> = {
+  same_fact: "Both passages state the same underlying fact or claim",
+  contradicts: "The passages state opposing facts about the same subject",
+  different_facts: "The passages discuss different subjects or make non-overlapping claims",
+};
+
+/**
+ * Per-aspect wording of the same three relations. At aspect granularity the
+ * third outcome usually means one or both passages do not address the aspect,
+ * so the criterion says so explicitly instead of relying on the label alone.
+ */
+export const ASPECT_RELATIONS: Record<string, string> = {
+  same_fact: "Both passages make comparable assertions about this aspect and they agree",
+  contradicts: "Both passages address this aspect and their assertions conflict",
+  different_facts:
+    "The passages do not both make a comparable assertion about this aspect: at least one does not address it, or their mentions do not overlap",
+};
+
+/**
+ * Rerank candidates by per-candidate relevance scores aligned by index,
+ * descending. Scores are validated by the caller before this runs; the 0
+ * fallback only guards an internal wiring mistake, never a model answer.
+ */
+export function rerankByScore<T extends object>(candidates: T[], scores: number[]): Array<T & { relevance: number }> {
+  return candidates
+    .map((c, i) => ({ ...c, relevance: scores[i] ?? 0 }))
+    .sort((a, b) => b.relevance - a.relevance);
+}

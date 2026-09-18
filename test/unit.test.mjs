@@ -138,3 +138,44 @@ test("decide caps stay sane", () => {
   assert.ok(MAX_REQUIREMENTS >= 0 && MAX_REQUIREMENTS <= 10);
   assert.ok(Object.keys(DECIDE_ESCAPE_HATCHES).length === 3);
 });
+
+// jev_rerank / jev_compare / jev_extract helpers
+import {
+  ASPECT_RELATIONS,
+  COMPARE_RELATIONS,
+  MAX_COMPARE_ASPECTS,
+  MAX_EXTRACT_CANDIDATE_CHARS,
+  MAX_EXTRACT_CANDIDATES,
+  MAX_EXTRACT_FIELDS,
+  MAX_RERANK_CANDIDATES,
+  MAX_RERANK_TOTAL_CHARS,
+  rerankByScore,
+} from "../dist/lib.js";
+
+test("rerankByScore sorts by index-aligned relevance descending", () => {
+  const candidates = [{ id: "a" }, { id: "b" }, { id: "c" }];
+  const ranked = rerankByScore(candidates, [0.2, 0.9, 0.5]);
+  assert.deepEqual(ranked.map((c) => c.id), ["b", "c", "a"]);
+  assert.equal(ranked[0].relevance, 0.9);
+  // ties keep original order (stable sort)
+  const tied = rerankByScore(candidates, [0.5, 0.5, 0.5]);
+  assert.deepEqual(tied.map((c) => c.id), ["a", "b", "c"]);
+});
+
+test("rerank/compare/extract caps stay sane", () => {
+  assert.ok(MAX_RERANK_CANDIDATES >= 2 && MAX_RERANK_CANDIDATES <= 250);
+  assert.ok(MAX_RERANK_TOTAL_CHARS >= 10_000 && MAX_RERANK_TOTAL_CHARS <= 250_000);
+  assert.ok(MAX_COMPARE_ASPECTS >= 1 && MAX_COMPARE_ASPECTS <= 20);
+  assert.ok(MAX_EXTRACT_FIELDS >= 1 && MAX_EXTRACT_FIELDS <= 64);
+  assert.ok(MAX_EXTRACT_CANDIDATES >= 2 && MAX_EXTRACT_CANDIDATES <= 50);
+  assert.ok(MAX_EXTRACT_CANDIDATE_CHARS >= 200 && MAX_EXTRACT_CANDIDATE_CHARS <= 4_000);
+});
+
+test("COMPARE_RELATIONS and ASPECT_RELATIONS share the same three keys", () => {
+  const overall = Object.keys(COMPARE_RELATIONS).sort();
+  const aspect = Object.keys(ASPECT_RELATIONS).sort();
+  assert.deepEqual(overall, ["contradicts", "different_facts", "same_fact"]);
+  assert.deepEqual(overall, aspect);
+  // the aspect wording must say what "not both address it" means
+  assert.match(ASPECT_RELATIONS.different_facts, /does not both|at least one/i);
+});

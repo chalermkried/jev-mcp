@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 // jev-mcp: TypeSafe Jev as MCP judgment tools.
 //
-// Three purpose-built tools instead of a raw API passthrough — the question
+// Purpose-built tools instead of a raw API passthrough — the question
 // design lives here so every agent thread gets well-formed judgments:
 //
-//   jev_verify — check claims against evidence (citation-check pattern)
-//   jev_screen — guardrail fetched/external text before it enters context
-//   jev_find   — semantic search over candidates, no embeddings required
+//   jev_verify   — check claims against evidence (citation-check pattern)
+//   jev_screen   — guardrail fetched/external text before it enters context
+//   jev_find     — semantic search over candidates, no embeddings required
+//   jev_classify — batch-assign items to classes from a shared catalog
+//   jev_decide   — bounded multi-candidate decision with requirement checks
+//   jev_rerank   — score every candidate's relevance, return them sorted
+//   jev_compare  — pairwise fact relation, optionally per named aspect
+//   jev_extract  — regex candidates, Jev picks the right verbatim value
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -27,6 +32,17 @@ import {
   MAX_CANDIDATES,
   MAX_CANDIDATE_CHARS,
   rankCandidates,
+  COMPARE_RELATIONS,
+  ASPECT_RELATIONS,
+  MAX_COMPARE_ASPECTS,
+  MAX_EXTRACT_CANDIDATES,
+  MAX_EXTRACT_CANDIDATE_CHARS,
+  MAX_EXTRACT_FIELDS,
+  MAX_EXTRACT_TOTAL_CHARS,
+  MAX_RERANK_CANDIDATES,
+  MAX_RERANK_TOTAL_CHARS,
+  REGEX_TIMEOUT_MS,
+  rerankByScore,
   RELATION_TO_VERDICT,
   screenRecommendation,
   truncate,
@@ -599,6 +615,466 @@ server.registerTool(
         contradicted.length > 0
           ? [`Requirement${contradicted.length > 1 ? "s" : ""} ${contradicted.map((i) => i + 1).join(", ")} contradicted by the recommended candidate; inspect before acting`]
           : [],
+      usage,
+    });
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// jev_rerank
+// ─────────────────────────────────────────────────────────────────────────────
+server.registerTool(
+  "jev_rerank",
+  {
+    title: "Score every candidate's relevance and return them sorted",
+    description:
+      "Rerank candidates against a query with TypeSafe Jev: one independent relevance probability per candidate, " +
+      "all in a single request, then sorted by score. Unlike jev_find (which picks one best answer), rerank scores " +
+      "every candidate so the full ordering survives. TypeSafe's rerank cookbook reports that on the CLERC benchmark " +
+      "this pattern lifted top-1 from 5% to 18% and top-10 from 38% to 62% (docs.typesafe.ai/cookbooks). " +
+      `Use for retrieval ordering, dedup triage, or feed ranking across up to ${MAX_RERANK_CANDIDATES} candidates.`,
+    inputSchema: {
+      query: z.string().min(1).max(2000).describe("What relevance is measured against, in natural language."),
+      candidates: candidatesSchema,
+      top_k: z.number().int().min(1).max(250).optional().describe("How many ranked candidates to return. Default: all."),
+    },
+  },
+  async ({ query, candidates: rawCandidates, top_k }) => {
+    const topK = top_k ?? null;
+
+    // Caller IDs are preserved verbatim; opaque wire keys (classify pattern).
+    // Duplicate supplied IDs are rejected rather than silently renamed, and
+    // generated fallbacks avoid every supplied or already-used ID so an
+    // omitted id can never collide with an explicit one.
+    const suppliedIds = new Set<string>();
+    for (const c of rawCandidates) {
+      if (c.id != null) {
+        if (suppliedIds.has(c.id)) throw new Error(`Duplicate candidate id: ${c.id}`);
+        suppliedIds.add(c.id);
+      }
+    }
+    const usedIds = new Set(suppliedIds);
+    const candidates = rawCandidates.map((c, i) => {
+      let external: string;
+      if (c.id != null) {
+        external = c.id;
+      } else {
+        external = `candidate${i}`;
+        let suffix = 2;
+        while (usedIds.has(external)) external = `candidate${i}_${suffix++}`;
+      }
+      usedIds.add(external);
+      return { external, key: `c${i}`, text: truncate(c.text, MAX_CANDIDATE_CHARS) };
+    });
+    const totalChars = candidates.reduce((n, c) => n + c.text.length, 0);
+    if (totalChars > MAX_RERANK_TOTAL_CHARS) {
+      throw new Error(
+        `Batch too large: ${totalChars} candidate characters exceeds the ${MAX_RERANK_TOTAL_CHARS} character budget. Split the batch.`,
+      );
+    }
+
+    // The query lives once in shared state; each question carries only its own
+    // candidate text, so request size scales with candidates, not pairs.
+    const state = { query };
+    const questions: Record<string, unknown> = {};
+    candidates.forEach((c, i) => {
+      questions[`rel_${i}`] = noul(`Is candidate ${c.key} relevant to the query in the state? Candidate ${c.key}: ${c.text}`, {
+        true: "The candidate addresses the subject the query asks about, or provides what it seeks",
+        false: "The candidate is about a different subject, or only shares vocabulary with the query",
+      });
+    });
+
+    const { answers, usage, provider, model } = await askJev(state, questions);
+
+    // One invalid Noul makes the whole ordering untrustworthy; never sort a
+    // missing answer as a confident zero.
+    const scores = candidates.map((_, i) => {
+      const value = answers[`rel_${i}`]?.noul;
+      return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1 ? value : Number.NaN;
+    });
+    if (scores.some((s) => Number.isNaN(s))) {
+      return text({
+        tool: "jev_rerank",
+        model: model,
+        provider,
+        query,
+        status: "invalid_response",
+        ranked: null,
+        usage,
+      });
+    }
+
+    const ranked = rerankByScore(
+      candidates.map((c) => ({ id: c.external, text: c.text })),
+      scores,
+    );
+    const returned = topK ? ranked.slice(0, topK) : ranked;
+
+    return text({
+      tool: "jev_rerank",
+      model: model,
+      provider,
+      query,
+      summary: {
+        candidates: candidates.length,
+        returned: returned.length,
+        relevant: ranked.filter((c) => c.relevance >= 0.7).length,
+      },
+      ranked: returned.map((c, rank) => ({
+        rank: rank + 1,
+        id: c.id,
+        relevance: Number(c.relevance.toFixed(4)),
+        text: c.text,
+      })),
+      usage,
+    });
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// jev_compare
+// ─────────────────────────────────────────────────────────────────────────────
+server.registerTool(
+  "jev_compare",
+  {
+    title: "Compare two passages for factual agreement",
+    description:
+      "Judge the relation between two passages with TypeSafe Jev: same_fact, contradicts, or different_facts, " +
+      "with the full probability distribution, confidence, and an auto-versus-review decision. " +
+      "Optionally supply aspects (price, date, method, …) and each gets an independent per-aspect judgment " +
+      "in the same single request. Use for source reconciliation, changelog-vs-code drift, or merge sanity checks. " +
+      "The request supplies no evidence beyond the two passages, so a same_fact verdict means they agree with each other, not that they are true.",
+    inputSchema: {
+      passage_a: z.string().min(1).max(20000).describe("First passage. Rejected above 20,000 characters."),
+      passage_b: z.string().min(1).max(20000).describe("Second passage. Rejected above 20,000 characters."),
+      aspects: z
+        .array(z.string().min(1).max(200))
+        .max(MAX_COMPARE_ASPECTS)
+        .optional()
+        .describe("Named aspects to judge independently (e.g. 'price', 'launch date'). Each tests one property."),
+      purpose: z.string().optional().describe("What this comparison is for; helps disambiguate overlap."),
+      auto_accept: z.number().min(0).max(1).optional().describe("Minimum top probability for auto. Default 0.85."),
+      minimum_margin: z.number().min(0).max(1).optional().describe("Minimum winner-to-runner-up gap for auto. Default 0.5."),
+    },
+  },
+  async ({ passage_a, passage_b, aspects: rawAspects, purpose, auto_accept, minimum_margin }) => {
+    const autoAccept = auto_accept ?? 0.85;
+    const minMargin = minimum_margin ?? 0.5;
+    const aspects = rawAspects ?? [];
+
+    const a = truncate(passage_a, 20000);
+    const b = truncate(passage_b, 20000);
+
+    // Overall relation plus one independent Choice per aspect, one request.
+    // Aspect questions use aspect-specific wording for the third outcome,
+    // where "different facts" usually means one passage does not address it.
+    const questions: Record<string, unknown> = {
+      overall: choice(
+        "Do the two passages state the same underlying fact, contradict each other, or discuss different facts?",
+        { ...COMPARE_RELATIONS },
+      ),
+    };
+    aspects.forEach((aspect, i) => {
+      questions[`aspect_${i}`] = choice(
+        `Judging only the aspect "${aspect}" of the two passages in the state, which relation holds?`,
+        { ...ASPECT_RELATIONS },
+      );
+    });
+
+    const state = { purpose: purpose ?? null, passage_a: a, passage_b: b, aspects };
+    const { answers, usage, provider, model } = await askJev(state, questions);
+
+    const expected = new Set(Object.keys(COMPARE_RELATIONS));
+    const validateChoice = (answer: unknown) => {
+      if (!answer || typeof (answer as any).choice !== "string" || !expected.has((answer as any).choice)) return null;
+      const probabilities: Record<string, number> = (answer as any).probabilities ?? {};
+      const keys = Object.keys(probabilities);
+      const values = Object.values(probabilities);
+      if (
+        keys.length !== expected.size ||
+        !keys.every((k) => expected.has(k)) ||
+        !values.every((p) => Number.isFinite(p) && p >= 0 && p <= 1) ||
+        Math.abs(values.reduce((x, y) => x + y, 0) - 1) > 0.01 ||
+        // Choice contract: the chosen option must be the argmax.
+        probabilities[(answer as any).choice] < Math.max(...values) - 1e-9
+      )
+        return null;
+      const rawConfidence = (answer as any).confidence;
+      const confidence =
+        typeof rawConfidence === "number" && Number.isFinite(rawConfidence) && rawConfidence >= 0 && rawConfidence <= 1
+          ? rawConfidence
+          : null;
+      return { choice: (answer as any).choice, confidence, probabilities };
+    };
+
+    const shape = (raw: unknown) => {
+      const answer = validateChoice(raw);
+      if (!answer) {
+        return {
+          relation: null,
+          probabilities: null,
+          confidence: null,
+          margin: null,
+          decision: "review" as const,
+          status: "invalid_response" as const,
+        };
+      }
+      const margin = marginOf(answer.probabilities);
+      return {
+        relation: answer.choice,
+        probabilities: answer.probabilities,
+        confidence: answer.confidence ?? null,
+        margin,
+        decision: classificationDecision(answer.probabilities[answer.choice] ?? 0, margin, autoAccept, minMargin),
+      };
+    };
+
+    const overall = shape(answers.overall);
+    const aspectResults = aspects.map((aspect, i) => ({ aspect, ...shape(answers[`aspect_${i}`]) }));
+
+    return text({
+      tool: "jev_compare",
+      model: model,
+      provider,
+      overall,
+      aspects: aspectResults,
+      thresholds: { auto_accept: autoAccept, minimum_margin: minMargin },
+      usage,
+    });
+  },
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// jev_extract
+// ─────────────────────────────────────────────────────────────────────────────
+import { Worker } from "node:worker_threads";
+
+// Caller-supplied regex runs in a throwaway worker with a hard deadline, so a
+// catastrophic backtracking pattern can never hang the MCP server itself.
+const REGEX_WORKER_SOURCE = `
+import { parentPort, workerData } from "node:worker_threads";
+const { document, pattern, flags, maxCandidates, maxCandidateChars } = workerData;
+try {
+  const re = new RegExp(pattern, flags);
+  const seen = new Set();
+  const candidates = [];
+  let truncated = false;
+  let tooLong = 0;
+  for (const match of document.matchAll(re)) {
+    const value = match[0];
+    if (value.length === 0 || seen.has(value)) continue;
+    seen.add(value);
+    if (value.length > maxCandidateChars) { tooLong += 1; continue; }
+    if (candidates.length >= maxCandidates) { truncated = true; break; }
+    candidates.push(value);
+  }
+  parentPort.postMessage({ candidates, truncated, tooLong });
+} catch (error) {
+  parentPort.postMessage({ candidates: [], truncated: false, tooLong: 0, error: String(error && error.message ? error.message : error) });
+}
+`;
+
+function runRegex(
+  document: string,
+  pattern: string,
+  flags: string,
+): Promise<{ candidates: string[]; truncated: boolean; tooLong: number; error: string | null }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const worker = new Worker(REGEX_WORKER_SOURCE, {
+      eval: true,
+      workerData: { document, pattern, flags, maxCandidates: MAX_EXTRACT_CANDIDATES, maxCandidateChars: MAX_EXTRACT_CANDIDATE_CHARS },
+    });
+    const finish = (value: { candidates: string[]; truncated: boolean; tooLong: number; error: string | null }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      void worker.terminate();
+      resolve(value);
+    };
+    const timer = setTimeout(
+      () =>
+        finish({
+          candidates: [],
+          truncated: false,
+          tooLong: 0,
+          error: `regex timed out after ${REGEX_TIMEOUT_MS}ms; simplify the pattern`,
+        }),
+      REGEX_TIMEOUT_MS,
+    );
+    worker.on("message", (message) => finish(message));
+    worker.on("error", (error) => finish({ candidates: [], truncated: false, tooLong: 0, error: error.message }));
+  });
+}
+
+server.registerTool(
+  "jev_extract",
+  {
+    title: "Extract fields by regex, Jev picks the right match",
+    description:
+      "Extract structured fields from a document with TypeSafe Jev as the picker, not the generator: your regex " +
+      "finds candidate substrings in code, Jev chooses which candidate is the field's true value, and the result is " +
+      "returned verbatim — never model-generated text. Fields with zero regex matches never reach the model " +
+      "(not_found); if no field has matches, no API call is made. Ambiguous picks are flagged for review. Use for prices, dates, version numbers, " +
+      "IDs, and anything with a recognizable shape; keep documents bounded.",
+    inputSchema: {
+      document: z.string().min(1).max(50000).describe("The document to extract from. Rejected above 50,000 characters."),
+      fields: z
+        .array(
+          z.object({
+            id: z.string().regex(/^[a-z][a-z0-9_-]*$/).max(64).describe("Field name, e.g. 'price' or 'version'."),
+            pattern: z.string().min(1).max(500).describe("JavaScript regex source (without delimiters) that matches candidate values. Runs in a sandboxed worker with a hard timeout."),
+            flags: z.string().max(8).optional().describe("Regex flags (e.g. 'i'). 'g' is always added; non-letters are dropped."),
+            description: z.string().min(1).max(2000).describe("What the field is, so Jev can pick the right candidate among regex matches."),
+          }),
+        )
+        .min(1)
+        .max(MAX_EXTRACT_FIELDS)
+        .describe(`Fields to extract. Up to ${MAX_EXTRACT_FIELDS} per call, all judged in one request.`),
+      purpose: z.string().optional().describe("What the extraction is for; shared across fields."),
+      auto_accept: z.number().min(0).max(1).optional().describe("Minimum top probability for auto. Default 0.85."),
+      minimum_margin: z.number().min(0).max(1).optional().describe("Minimum winner-to-runner-up gap for auto. Default 0.5."),
+    },
+  },
+  async ({ document, fields: rawFields, purpose, auto_accept, minimum_margin }) => {
+    const autoAccept = auto_accept ?? 0.85;
+    const minMargin = minimum_margin ?? 0.5;
+    const doc = truncate(document, 50000);
+
+    const seenFieldIds = new Set<string>();
+    for (const f of rawFields) {
+      if (seenFieldIds.has(f.id)) throw new Error(`Duplicate field id: ${f.id}`);
+      seenFieldIds.add(f.id);
+    }
+
+    // Regex runs in an isolated worker; Jev only picks among the matches.
+    // Zero-length matches are dropped and overlong matches are skipped before
+    // the cap is applied, so eligible matches are never crowded out by
+    // ineligible ones, and candidate identity on the wire always equals the
+    // value returned.
+    const fields = [];
+    for (let i = 0; i < rawFields.length; i++) {
+      const f = rawFields[i];
+      const flags = ((f.flags ?? "").replace(/[^a-z]/g, "") + "g").replace(/g+/g, "g");
+      const result = await runRegex(doc, f.pattern, flags);
+      fields.push({
+        ...f,
+        key: `f${i}`,
+        candidates: result.error ? [] : result.candidates,
+        tooLong: result.tooLong,
+        truncated: result.truncated,
+        error: result.error,
+      });
+    }
+
+    // Aggregate preview budget across all fields keeps one request bounded.
+    const totalPreviewChars = fields.reduce((n, f) => n + f.candidates.reduce((m, c) => m + c.length, 0), 0);
+    if (totalPreviewChars > MAX_EXTRACT_TOTAL_CHARS) {
+      throw new Error(
+        `Batch too large: ${totalPreviewChars} candidate characters exceeds the ${MAX_EXTRACT_TOTAL_CHARS} character budget. Tighten the patterns or split the call.`,
+      );
+    }
+
+    // One request: one Choice per field that has candidates. Zero-match and
+    // invalid-pattern fields never reach the model. Candidates appear only in
+    // their own question's criteria; the document is sent once in the state.
+    const questions: Record<string, unknown> = {};
+    const stateFields: Array<{ id: string; description: string; pattern: string }> = [];
+    for (const f of fields) {
+      if (f.error || f.candidates.length === 0) continue;
+      const criteria: Record<string, string> = Object.fromEntries(
+        f.candidates.map((c, j) => [`c${j}`, `Candidate value: ${JSON.stringify(c)}`]),
+      );
+      criteria.none_of_them = "None of the candidates is the value this field asks for";
+      questions[f.key] = choice(
+        `Which candidate is the correct value of the field "${f.id}" (${f.description}) in the document in the state? Pick the exact substring the document presents as this field's value.`,
+        criteria,
+      );
+      stateFields.push({ id: f.key, description: f.description, pattern: f.pattern });
+    }
+
+    const { answers, usage, provider, model } =
+      stateFields.length > 0 ? await askJev({ purpose: purpose ?? null, document: doc, fields: stateFields }, questions) : { answers: {} as Record<string, any>, usage: null, provider: "none" as const, model: MODEL };
+
+    const results = fields.map((f) => {
+      const flags = { candidates_truncated: f.truncated, matches_skipped_too_long: f.tooLong };
+      // An incomplete candidate universe (capped or overlong-skipped matches)
+      // poisons every outcome, including none_of_them: the right value may be
+      // among the matches we did not send, so nothing can be auto or a
+      // definite not_found.
+      const incomplete = f.truncated || f.tooLong > 0;
+      if (f.error) {
+        return { id: f.id, value: null, status: "invalid_pattern" as const, reason: f.error, candidates_considered: 0, ...flags };
+      }
+      if (f.candidates.length === 0) {
+        return f.tooLong > 0
+          ? { id: f.id, value: null, status: "review" as const, reason: "matches_too_long" as const, candidates_considered: 0, ...flags }
+          : { id: f.id, value: null, status: "not_found" as const, reason: "no_regex_matches" as const, candidates_considered: 0, ...flags };
+      }
+      const answer = answers[f.key];
+      const probabilities: Record<string, number> = answer?.probabilities ?? {};
+      const keys = Object.keys(probabilities);
+      const values = Object.values(probabilities);
+      const expectedKeys = new Set([...f.candidates.map((_, j) => `c${j}`), "none_of_them"]);
+      const valid =
+        answer &&
+        typeof answer.choice === "string" &&
+        expectedKeys.has(answer.choice) &&
+        keys.length === expectedKeys.size &&
+        keys.every((k) => expectedKeys.has(k)) &&
+        values.every((p) => Number.isFinite(p) && p >= 0 && p <= 1) &&
+        Math.abs(values.reduce((x, y) => x + y, 0) - 1) <= 0.01 &&
+        probabilities[answer.choice] >= Math.max(...values) - 1e-9;
+      if (!valid) {
+        return { id: f.id, value: null, status: "invalid_response" as const, reason: null, candidates_considered: f.candidates.length, ...flags };
+      }
+      const margin = marginOf(probabilities);
+      const topProbability = probabilities[answer.choice] ?? 0;
+      const rawConfidence = answer.confidence;
+      const confidence =
+        typeof rawConfidence === "number" && Number.isFinite(rawConfidence) && rawConfidence >= 0 && rawConfidence <= 1
+          ? rawConfidence
+          : null;
+      if (answer.choice === "none_of_them") {
+        // The negative answer is gated like a positive one, and an incomplete
+        // universe makes even a confident "none of them" provisional.
+        if (incomplete) {
+          return { id: f.id, value: null, status: "review" as const, reason: "candidate_limit" as const, confidence, top_probability: topProbability, margin, candidates_considered: f.candidates.length, ...flags };
+        }
+        return classificationDecision(topProbability, margin, autoAccept, minMargin) === "auto"
+          ? { id: f.id, value: null, status: "not_found" as const, reason: "none_matched" as const, confidence, top_probability: topProbability, margin, candidates_considered: f.candidates.length, ...flags }
+          : { id: f.id, value: null, status: "review" as const, reason: "none_matched_ambiguous" as const, confidence, top_probability: topProbability, margin, candidates_considered: f.candidates.length, ...flags };
+      }
+      // The best value may be among the unsent matches; a truncated universe
+      // can never be auto.
+      const decision = incomplete ? ("review" as const) : classificationDecision(topProbability, margin, autoAccept, minMargin);
+      return {
+        id: f.id,
+        value: f.candidates[Number(answer.choice.slice(1))],
+        status: decision,
+        reason: incomplete ? ("candidate_limit" as const) : null,
+        confidence,
+        top_probability: topProbability,
+        margin,
+        candidates_considered: f.candidates.length,
+        ...flags,
+      };
+    });
+
+    return text({
+      tool: "jev_extract",
+      model: model,
+      provider,
+      summary: {
+        fields: results.length,
+        extracted: results.filter((r) => r.value !== null).length,
+        auto: results.filter((r) => r.status === "auto").length,
+        review: results.filter((r) => r.status === "review").length,
+        not_found: results.filter((r) => r.status === "not_found").length,
+        invalid: results.filter((r) => r.status === "invalid_pattern" || r.status === "invalid_response").length,
+      },
+      thresholds: { auto_accept: autoAccept, minimum_margin: minMargin },
+      results,
       usage,
     });
   },
