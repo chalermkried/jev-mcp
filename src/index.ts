@@ -718,7 +718,6 @@ server.registerTool(
       summary: {
         candidates: candidates.length,
         returned: returned.length,
-        relevant: ranked.filter((c) => c.relevance >= 0.7).length,
       },
       ranked: returned.map((c, rank) => ({
         rank: rank + 1,
