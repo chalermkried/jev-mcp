@@ -1,9 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  classificationDecision,
+  contradictsRecommendation,
+  DECIDE_ESCAPE_HATCHES,
   ensureUniqueIds,
   existsVerdict,
+  marginOf,
   MAX_CANDIDATES,
+  MAX_CANDIDATES_DECIDE,
+  MAX_CLASSES,
+  MAX_ITEM_CHARS,
+  MAX_ITEMS,
+  MAX_REQUIREMENTS,
   rankCandidates,
   RELATION_TO_VERDICT,
   sanitizeId,
@@ -90,12 +99,7 @@ test("MAX_CANDIDATES stays within TypeSafe Choice option limit", () => {
   assert.ok(MAX_CANDIDATES <= 255);
 });
 
-import {
-  classificationDecision,
-  marginOf,
-  MAX_CLASSES,
-  MAX_ITEMS,
-} from "../dist/lib.js";
+
 
 test("marginOf measures winner-to-runner-up gap", () => {
   assert.ok(Math.abs(marginOf({ a: 0.7, b: 0.2, c: 0.1 }) - 0.5) < 1e-9);
@@ -115,4 +119,22 @@ test("classificationDecision requires both top probability and margin", () => {
 test("catalog and batch caps stay within Jev limits", () => {
   assert.ok(MAX_CLASSES <= 255);
   assert.ok(MAX_ITEMS >= 2 && MAX_ITEMS <= 255);
+});
+
+test("contradictsRecommendation flags only the recommended candidate", () => {
+  const checks = [
+    { candidate: "a", requirement: 0, answer: "contradicted" },
+    { candidate: "a", requirement: 1, answer: "supported" },
+    { candidate: "b", requirement: 0, answer: "contradicted" },
+    { candidate: "a", requirement: 2, answer: "unknown" },
+  ];
+  assert.deepEqual(contradictsRecommendation(checks, "a"), [0]);
+  assert.deepEqual(contradictsRecommendation(checks, "b"), [0]); // b also contradicts req 0
+  assert.deepEqual(contradictsRecommendation([], "a"), []);
+});
+
+test("decide caps stay sane", () => {
+  assert.ok(MAX_CANDIDATES_DECIDE >= 2 && MAX_CANDIDATES_DECIDE <= 10);
+  assert.ok(MAX_REQUIREMENTS >= 0 && MAX_REQUIREMENTS <= 10);
+  assert.ok(Object.keys(DECIDE_ESCAPE_HATCHES).length === 3);
 });

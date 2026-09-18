@@ -40,7 +40,7 @@ test("lists the three tools", { skip: !hasKey }, async () => {
   await withClient(async (client) => {
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name).sort();
-    assert.deepEqual(names, ["jev_classify", "jev_find", "jev_screen", "jev_verify"]);
+    assert.deepEqual(names, ["jev_classify", "jev_decide", "jev_find", "jev_screen", "jev_verify"]);
   });
 });
 

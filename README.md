@@ -215,6 +215,40 @@ Assign each item to one class from a shared catalog, in one batched request: the
 - Up to 250 classes and 64 items per call, with an 8,000 item-class budget per batch (split larger waves into multiple calls); item text is truncated at 2,000 characters.
 - A malformed or incomplete model response is reported as `status: invalid_response` on that item, never as model uncertainty.
 
+### jev_decide
+
+One bounded decision, 2-6 candidates, evidence, and explicit priorities. Jev returns a Choice distribution over the candidates plus escape hatches, and a per-candidate per-requirement check, in one request.
+
+```jsonc
+// arguments
+{
+  "decision": "Choose the report status update channel.",
+  "evidence": "Polling updates within 30 seconds. Managed push updates within one second but adds a paid vendor.",
+  "priorities": "The user accepts 30 seconds and prioritizes no new paid services.",
+  "candidates": [
+    { "id": "poll", "description": "Poll the existing authenticated endpoint." },
+    { "id": "push", "description": "Add the managed push service." }
+  ],
+  "requirements": ["No new paid service is needed."]
+}
+```
+
+```jsonc
+// live result, abridged
+{
+  "recommendation": { "selected": "poll", "escaped": false, "confidence": 1,
+                      "probabilities": { "poll": 1, "push": 0, "ask_user": 0 } },
+  "checks": [ { "candidate": "poll", "requirement": 0, "answer": "supported" },
+              { "candidate": "push", "requirement": 0, "answer": "contradicted" } ]
+}
+```
+
+- Escape hatches (`ask_user`, `investigate`, `none`) let the model decline to rank when a preference or fact is missing; `escaped: true` in the result marks it. Disable with `escape_hatches: false` for closed-world choices.
+- Requirement checks run as independent questions in the same request and may disagree with the recommendation; a contradiction on the recommended candidate surfaces as a warning.
+- One call per unchanged decision. Repeat only with materially new evidence or criteria.
+
+<sub>Pattern credit: [thesammykins/jev_ampcode](https://github.com/thesammykins/jev_ampcode).</sub>
+
 ## How the answers work
 
 Jev is TypeSafe's System One model: it returns typed answers with calibrated probability distributions, not generated text. A verify call is a Choice over supports / contradicts / says_nothing, so you see the whole distribution, not one label. A screen call is a set of yes/no probabilities. A find call is a Choice over your candidate ids plus an existence check. Code maps the answers to verdicts and actions; policy stays with you.

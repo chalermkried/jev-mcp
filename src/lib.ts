@@ -127,3 +127,30 @@ export function classificationDecision(
 ): "auto" | "review" {
   return topProbability >= autoAccept && margin >= minimumMargin ? "auto" : "review";
 }
+
+/** Max candidates per jev_decide call. */
+export const MAX_CANDIDATES_DECIDE = 6;
+
+/** Max requirements per jev_decide call. */
+export const MAX_REQUIREMENTS = 3;
+
+/** Escape-hatch options appended to the Choice criteria so the model can decline to rank. */
+export const DECIDE_ESCAPE_HATCHES: Record<string, string> = {
+  ask_user: "A consequential user preference or requirement is missing; ask instead of inventing it",
+  investigate: "Gather missing technical or factual evidence before selecting a candidate",
+  none: "None of the supplied candidates fits the known requirements",
+};
+
+/**
+ * A requirement check contradicts the recommended candidate when it returns
+ * "contradicted" for that candidate. Independent questions may disagree with
+ * the recommendation; surface the disagreement, do not average it away.
+ */
+export function contradictsRecommendation(
+  checks: Array<{ candidate: string; requirement: number; answer: string }>,
+  recommended: string,
+): number[] {
+  return checks
+    .filter((c) => c.candidate === recommended && c.answer === "contradicted")
+    .map((c) => c.requirement);
+}
