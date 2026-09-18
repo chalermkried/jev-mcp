@@ -54,19 +54,26 @@ From npm:
 npx -y @jkudish/jev-mcp
 ```
 
-### Amp
+<details>
+<summary>Amp</summary>
 
 ```bash
 amp mcp add jev -- npx -y @jkudish/jev-mcp
 ```
 
-### Claude Code
+</details>
+
+<details>
+<summary>Claude Code</summary>
 
 ```bash
 claude mcp add jev -- npx -y @jkudish/jev-mcp
 ```
 
-### Codex (`~/.codex/config.toml`)
+</details>
+
+<details>
+<summary>Codex (<code>~/.codex/config.toml</code>)</summary>
 
 ```toml
 [mcp_servers.jev]
@@ -74,7 +81,10 @@ command = "npx"
 args = ["-y", "@jkudish/jev-mcp"]
 ```
 
-### OpenCode (`opencode.json`)
+</details>
+
+<details>
+<summary>OpenCode (<code>opencode.json</code>)</summary>
 
 ```json
 {
@@ -88,7 +98,10 @@ args = ["-y", "@jkudish/jev-mcp"]
 }
 ```
 
-### Any other MCP client
+</details>
+
+<details>
+<summary>Any other MCP client</summary>
 
 ```json
 {
@@ -101,6 +114,8 @@ args = ["-y", "@jkudish/jev-mcp"]
   }
 }
 ```
+
+</details>
 
 Some MCP clients filter the environment before spawning servers, which silently drops `TYPESAFE_API_KEY`. If the server reports a missing key, pass it explicitly as shown above.
 
