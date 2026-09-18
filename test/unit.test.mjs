@@ -89,3 +89,30 @@ test("rankCandidates orders by probability and keeps caller order on ties", () =
 test("MAX_CANDIDATES stays within TypeSafe Choice option limit", () => {
   assert.ok(MAX_CANDIDATES <= 255);
 });
+
+import {
+  classificationDecision,
+  marginOf,
+  MAX_CLASSES,
+  MAX_ITEMS,
+} from "../dist/lib.js";
+
+test("marginOf measures winner-to-runner-up gap", () => {
+  assert.ok(Math.abs(marginOf({ a: 0.7, b: 0.2, c: 0.1 }) - 0.5) < 1e-9);
+  assert.equal(marginOf({ a: 0.5, b: 0.5 }), 0);
+  assert.equal(marginOf({ only: 0.8 }), 0.8); // lone class: margin is its own probability
+  assert.equal(marginOf(undefined), 0);
+  assert.equal(marginOf(null), 0);
+});
+
+test("classificationDecision requires both top probability and margin", () => {
+  assert.equal(classificationDecision(0.9, 0.6, 0.85, 0.5), "auto");
+  assert.equal(classificationDecision(0.9, 0.4, 0.85, 0.5), "review"); // high conf, thin margin
+  assert.equal(classificationDecision(0.8, 0.8, 0.85, 0.5), "review"); // wide margin, low top
+  assert.equal(classificationDecision(0.85, 0.5, 0.85, 0.5), "auto"); // exactly at both gates
+});
+
+test("catalog and batch caps stay within Jev limits", () => {
+  assert.ok(MAX_CLASSES <= 255);
+  assert.ok(MAX_ITEMS >= 2 && MAX_ITEMS <= 255);
+});

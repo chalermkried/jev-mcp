@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- New `jev_classify` tool: assign up to 64 items to a shared catalog of up to 250 classes in one batched request (catalog sent once, one Choice per item). Per-item distribution, confidence, winner margin, and an auto-versus-review decision gated on both top probability (default 0.85) and margin (default 0.5).
+
 ## 0.3.0
 
 - Cloudflare Workers AI support: with `CLOUDFLARE_API_TOKEN` (or `JEV_CLOUDFLARE_API_TOKEN`) and `CLOUDFLARE_ACCOUNT_ID` set, judgments run through Cloudflare at the `typesafe/jev` alias; `JEV_PROVIDER=cloudflare` forces it. Usage tokens are reported on every call.

@@ -13,8 +13,13 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { choice, noul } from "@typesafe-ai/sdk";
 import { z } from "zod";
 import {
+  classificationDecision,
   ensureUniqueIds,
   existsVerdict,
+  marginOf,
+  MAX_CLASSES,
+  MAX_ITEM_CHARS,
+  MAX_ITEMS,
   MAX_CANDIDATES,
   MAX_CANDIDATE_CHARS,
   rankCandidates,
@@ -281,6 +286,114 @@ server.registerTool(
       exists,
       exists_verdict: existsVerdict(exists),
       top: ranked.map((c) => ({ id: c.id, probability: Number(c.probability.toFixed(4)), text: c.text })),
+      usage,
+    });
+  },
+);
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// jev_classify
+// ─────────────────────────────────────────────────────────────────────────────
+server.registerTool(
+  "jev_classify",
+  {
+    title: "Classify items against a shared label set",
+    description:
+      "Assign each item to one class from a shared catalog with TypeSafe Jev, in one batched request: " +
+      "the class catalog is sent once and every item becomes an independent Choice question. " +
+      "Returns per item: the chosen class, the full distribution, confidence, winner-to-runner-up margin, " +
+      "and an auto-versus-review decision. Auto requires both a high top probability (default 0.85) and a " +
+      "clear margin (default 0.50); everything else is flagged for review. Include a manual_review class " +
+      "in the catalog if you want an explicit escape hatch; the tool never invents one.",
+    inputSchema: {
+      items: z
+        .array(z.object({ id: z.string().optional(), text: z.string() }))
+        .min(1)
+        .max(MAX_ITEMS)
+        .describe(`Items to classify. Text is truncated at ${MAX_ITEM_CHARS} characters; send bounded excerpts, not whole documents.`),
+      classes: z
+        .array(z.object({ id: z.string().optional(), description: z.string() }))
+        .min(2)
+        .max(MAX_CLASSES)
+        .describe(
+          "Shared class catalog. Strong descriptions carry the decision: a precise definition, " +
+          "what belongs, what does not, precedence over overlapping classes, and a short example.",
+        ),
+      purpose: z.string().optional().describe("What this classification is for; shared across all items."),
+      context: z
+        .union([z.string(), z.record(z.any())])
+        .optional()
+        .describe("Shared context available to every item's judgment: policies, catalogs, anything stable."),
+      auto_accept: z.number().min(0).max(1).optional().describe("Minimum top probability for auto. Default 0.85."),
+      minimum_margin: z.number().min(0).max(1).optional().describe("Minimum winner-to-runner-up gap for auto. Default 0.5."),
+    },
+  },
+  async ({ items: rawItems, classes: rawClasses, purpose, context, auto_accept, minimum_margin }) => {
+    const autoAccept = auto_accept ?? 0.85;
+    const minMargin = minimum_margin ?? 0.5;
+    const { items: classList } = ensureUniqueIds(
+      rawClasses.map((c) => ({ ...c, text: c.description.slice(0, MAX_ITEM_CHARS) })),
+      "class",
+    );
+    const { items: itemList } = ensureUniqueIds(
+      rawItems.map((i) => ({ ...i, text: truncate(i.text, MAX_ITEM_CHARS) })),
+      "item",
+    );
+
+    const criteria: Record<string, string> = {};
+    for (const c of classList) criteria[c.id] = c.text;
+    const questions: Record<string, unknown> = {};
+    for (const item of itemList) {
+      questions[`item_${item.id}`] = choice(
+        `Which class does item \`${item.id}\` belong to?`,
+        criteria,
+      );
+    }
+
+    const state = {
+      purpose: purpose ?? "Assign each item to exactly one class.",
+      context: context ?? null,
+      classes: classList.map((c) => ({ id: c.id, description: c.text })),
+      items: itemList.map((i) => ({ id: i.id, text: i.text })),
+    };
+
+    const { answers, usage, provider, model } = await askJev(state, questions);
+
+    const results = itemList.map((item) => {
+      const answer = answers[`item_${item.id}`];
+      const probabilities: Record<string, number> = answer?.probabilities ?? {};
+      const ranked = Object.entries(probabilities).sort((a, b) => b[1] - a[1]);
+      const top = ranked[0]?.[0] ?? answer?.choice ?? null;
+      const topProbability = top !== null ? (probabilities[top] ?? 0) : 0;
+      const margin = marginOf(probabilities);
+      return {
+        id: item.id,
+        classification: top,
+        probabilities: probabilities,
+        confidence: answer?.confidence ?? null,
+        margin,
+        decision: classificationDecision(topProbability, margin, autoAccept, minMargin),
+      };
+    });
+
+    const byClass: Record<string, number> = {};
+    for (const r of results) {
+      if (r.classification !== null) byClass[r.classification] = (byClass[r.classification] ?? 0) + 1;
+    }
+
+    return text({
+      tool: "jev_classify",
+      model: model,
+      provider,
+      summary: {
+        items: results.length,
+        auto: results.filter((r) => r.decision === "auto").length,
+        review: results.filter((r) => r.decision === "review").length,
+        by_class: byClass,
+      },
+      thresholds: { auto_accept: autoAccept, minimum_margin: minMargin },
+      results,
       usage,
     });
   },

@@ -180,6 +180,40 @@ Rank candidates against a plain-language query. No embeddings, no index to maint
 - Up to 250 candidates per call. Candidate texts are truncated at 2,000 characters.
 - Pattern from the [semantic-find cookbook](https://docs.typesafe.ai/cookbooks/semantic_find).
 
+### jev_classify
+
+Assign each item to one class from a shared catalog, in one batched request: the catalog is sent once and every item becomes an independent Choice question. Designed for labeling many documents, messages, or records against a stable label set.
+
+```jsonc
+// arguments
+{
+  "purpose": "Route support messages",
+  "items": [
+    { "id": "m1", "text": "I was charged twice for my subscription this month." },
+    { "id": "m3", "text": "Do you have a student discount?" }
+  ],
+  "classes": [
+    { "id": "billing", "description": "Payments, invoices, refunds, subscription charges" },
+    { "id": "sales", "description": "Pricing questions, discounts, upgrade inquiries" }
+  ]
+}
+```
+
+```jsonc
+// live result, abridged: 4 items classified in one call for 820 input tokens
+{
+  "summary": { "items": 4, "auto": 4, "review": 0, "by_class": { "billing": 1, "technical": 2, "sales": 1 } },
+  "results": [
+    { "id": "m1", "classification": "billing", "margin": 1.0, "confidence": 1, "decision": "auto" }
+  ]
+}
+```
+
+- Auto-acceptance requires both a top probability at or above `auto_accept` (default `0.85`) and a winner-to-runner-up `margin` at or above `minimum_margin` (default `0.5`); conservative by design, based on classification spike testing where choice wording swayed uncertain cases.
+- Include a `manual_review` class in your catalog if you want an explicit escape hatch; the tool never invents one.
+- Class descriptions carry the decision. Strong ones state a precise definition, what belongs, what does not, precedence over overlapping classes, and a short example.
+- Up to 250 classes and 64 items per call; item text is truncated at 2,000 characters.
+
 ## How the answers work
 
 Jev is TypeSafe's System One model: it returns typed answers with calibrated probability distributions, not generated text. A verify call is a Choice over supports / contradicts / says_nothing, so you see the whole distribution, not one label. A screen call is a set of yes/no probabilities. A find call is a Choice over your candidate ids plus an existence check. Code maps the answers to verdicts and actions; policy stays with you.
