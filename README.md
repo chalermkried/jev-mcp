@@ -18,7 +18,7 @@ Give your agent eight judgment tools:
 
 Each judgment comes back typed: probabilities, and for most tools a confidence score, in roughly 150 to 500 ms, for a fraction of a cent. The cheap mechanical checks agents otherwise skip, because a frontier model is too slow to run on every page, claim, or candidate list.
 
-What you can use it for:
+What you can use it for (the use cases are endless; these are just examples):
 
 - Fact-check a report, PR description, or agent brief against the sources it cites, claim by claim.
 - Screen a fetched page for injected instructions before it enters context, and skip pages with nothing to say.
