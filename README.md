@@ -5,13 +5,29 @@
 
 Fast, cheap, typed judgments from TypeSafe's Jev model, as MCP tools.
 
-Give your agent eight judgment tools: `jev_verify` checks claims against evidence, `jev_screen` judges content before it enters context, `jev_find` picks the best candidate by meaning, `jev_rerank` scores and sorts every candidate, `jev_classify` batch-assigns items to classes, `jev_decide` settles bounded alternatives, `jev_compare` judges how two passages relate, and `jev_extract` pulls field values with regex plus judgment. Each judgment comes back typed: probabilities, and for most tools a confidence score, in roughly 150 to 500 ms, for a fraction of a cent. The cheap mechanical checks agents otherwise skip, because a frontier model is too slow to run on every page, claim, or candidate list.
+Give your agent eight judgment tools:
 
-Things it has done in real use:
+- `jev_verify` checks claims against evidence.
+- `jev_screen` judges content before it enters context.
+- `jev_find` picks the best candidate by meaning.
+- `jev_rerank` scores and sorts every candidate.
+- `jev_classify` batch-assigns items to classes.
+- `jev_decide` settles bounded alternatives.
+- `jev_compare` judges how two passages relate.
+- `jev_extract` pulls field values with regex plus judgment.
 
-- Caught a contradicted claim at confidence 1.0 against a city ordinance.
-- Blocked a pricing page carrying a hidden "ignore your instructions" note at injection probability 0.99, while still reading it as a real page.
-- Ranked three files for "how caching affects infrastructure costs" and picked the right one at probability 1.0.
+Each judgment comes back typed: probabilities, and for most tools a confidence score, in roughly 150 to 500 ms, for a fraction of a cent. The cheap mechanical checks agents otherwise skip, because a frontier model is too slow to run on every page, claim, or candidate list.
+
+What you can use it for:
+
+- Fact-check a report, PR description, or agent brief against the sources it cites, claim by claim.
+- Screen a fetched page for injected instructions before it enters context, and skip pages with nothing to say.
+- Find which document, file, or note answers a question, across hundreds of candidates, with no embeddings and no index to maintain.
+- Rerank retrieval results, triage near-duplicates, or order a feed by relevance.
+- Route support messages, label issues, or sort an inbox against your own label set, in batches.
+- Choose between a handful of options with evidence and priorities in view, with an explicit ask-the-user escape hatch when it cannot decide.
+- Reconcile a changelog against its docs, a summary against its source, or catch two pages that disagree about a price or a date.
+- Pull prices, dates, versions, and IDs out of a page or document as verbatim strings the model found but never wrote.
 
 This is early software. Expect rough edges. Issues and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
