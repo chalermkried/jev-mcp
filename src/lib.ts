@@ -108,11 +108,11 @@ export const MAX_ITEMS = 64;
 /** Item text cap; classification works on bounded excerpts, not whole documents. */
 export const MAX_ITEM_CHARS = 2000;
 
-/** Winner-to-runner-up gap; a lone class has no runner-up, so its margin is its own probability. */
+/** Winner-to-runner-up gap; a lone probability has no runner-up, so its margin is 0. */
 export function marginOf(probabilities: Record<string, number> | undefined | null): number {
   const ranked = Object.values(probabilities ?? {}).sort((a, b) => b - a);
-  if (ranked.length === 0) return 0;
-  return ranked.length >= 2 ? ranked[0] - ranked[1] : ranked[0];
+  if (ranked.length < 2) return 0;
+  return ranked[0] - ranked[1];
 }
 
 /**

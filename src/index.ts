@@ -332,47 +332,95 @@ server.registerTool(
   async ({ items: rawItems, classes: rawClasses, purpose, context, auto_accept, minimum_margin }) => {
     const autoAccept = auto_accept ?? 0.85;
     const minMargin = minimum_margin ?? 0.5;
-    const { items: classList } = ensureUniqueIds(
-      rawClasses.map((c) => ({ ...c, text: c.description.slice(0, MAX_ITEM_CHARS) })),
-      "class",
-    );
-    const { items: itemList } = ensureUniqueIds(
-      rawItems.map((i) => ({ ...i, text: truncate(i.text, MAX_ITEM_CHARS) })),
-      "item",
-    );
 
-    const criteria: Record<string, string> = {};
-    for (const c of classList) criteria[c.id] = c.text;
+    // Preserve caller IDs exactly; use opaque internal keys (i0/c0) for the
+    // wire so sanitization can never rename or collide externally, and
+    // reject duplicate supplied IDs rather than silently suffixing them.
+    const seenItemIds = new Set<string>();
+    const items = rawItems.map((it, i) => {
+      const external = it.id ?? `item${i}`;
+      if (it.id != null) {
+        if (seenItemIds.has(it.id)) throw new Error(`Duplicate item id: ${it.id}`);
+        seenItemIds.add(it.id);
+      }
+      return { external, key: `i${i}`, text: truncate(it.text, MAX_ITEM_CHARS) };
+    });
+    const seenClassIds = new Set<string>();
+    const classes = rawClasses.map((c, i) => {
+      const external = c.id ?? `class${i}`;
+      if (c.id != null) {
+        if (seenClassIds.has(c.id)) throw new Error(`Duplicate class id: ${c.id}`);
+        seenClassIds.add(c.id);
+      }
+      return { external, key: `c${i}`, description: truncate(c.description, MAX_ITEM_CHARS) };
+    });
+    if (items.length * classes.length > 8_000) {
+      throw new Error(
+        `Batch too large: ${items.length} items x ${classes.length} classes exceeds the 8,000 item-class budget. Split the batch.`,
+      );
+    }
+
+    // The catalog lives once in shared state; each question carries only its
+    // own item text in its instructions, and criteria are bare keys. Request
+    // size scales with items + catalog, not items x catalog.
+    const state = {
+      purpose: purpose ?? "Assign each item to exactly one class.",
+      context: context ?? null,
+      classes: classes.map((c) => ({ id: c.key, description: c.description })),
+    };
+    const criteria: Record<string, null> = Object.create(null);
+    for (const c of classes) criteria[c.key] = null;
     const questions: Record<string, unknown> = {};
-    for (const item of itemList) {
-      questions[`item_${item.id}`] = choice(
-        `Which class does item \`${item.id}\` belong to?`,
+    for (const item of items) {
+      questions[item.key] = choice(
+        { task: "Which class does this item belong to?", item: { id: item.key, text: item.text } },
         criteria,
       );
     }
 
-    const state = {
-      purpose: purpose ?? "Assign each item to exactly one class.",
-      context: context ?? null,
-      classes: classList.map((c) => ({ id: c.id, description: c.text })),
-      items: itemList.map((i) => ({ id: i.id, text: i.text })),
-    };
-
     const { answers, usage, provider, model } = await askJev(state, questions);
 
-    const results = itemList.map((item) => {
-      const answer = answers[`item_${item.id}`];
+    const keyToExternal = new Map(classes.map((c) => [c.key, c.external]));
+    const results = items.map((item) => {
+      const answer = answers[item.key];
+      const expected = new Set(classes.map((c) => c.key));
       const probabilities: Record<string, number> = answer?.probabilities ?? {};
-      const ranked = Object.entries(probabilities).sort((a, b) => b[1] - a[1]);
-      const top = ranked[0]?.[0] ?? answer?.choice ?? null;
-      const topProbability = top !== null ? (probabilities[top] ?? 0) : 0;
-      const margin = marginOf(probabilities);
+      const keys = Object.keys(probabilities);
+      const values = Object.values(probabilities);
+      const sum = values.reduce((a, b) => a + b, 0);
+      const valid =
+        answer &&
+        typeof answer.choice === "string" &&
+        expected.has(answer.choice) &&
+        keys.length >= expected.size &&
+        keys.every((k) => expected.has(k)) &&
+        values.every((p) => Number.isFinite(p) && p >= 0 && p <= 1) &&
+        Math.abs(sum - 1) <= 0.01;
+
+      if (!valid) {
+        return {
+          id: item.external,
+          status: "invalid_response" as const,
+          classification: null,
+          probabilities: null,
+          confidence: null,
+          margin: null,
+          decision: "review" as const,
+        };
+      }
+
+      const ranked = values.slice().sort((a, b) => b - a);
+      const margin = ranked.length >= 2 ? ranked[0] - ranked[1] : 0;
+      const topProbability = probabilities[answer.choice];
       return {
-        id: item.id,
-        classification: top,
-        probabilities: probabilities,
-        confidence: answer?.confidence ?? null,
+        id: item.external,
+        classification: keyToExternal.get(answer.choice) ?? answer.choice,
+        probabilities: Object.fromEntries(
+          classes.map((c) => [c.external, probabilities[c.key] ?? 0]),
+        ),
+        confidence: answer.confidence ?? null,
         margin,
+        top_probability: topProbability,
         decision: classificationDecision(topProbability, margin, autoAccept, minMargin),
       };
     });
@@ -389,7 +437,8 @@ server.registerTool(
       summary: {
         items: results.length,
         auto: results.filter((r) => r.decision === "auto").length,
-        review: results.filter((r) => r.decision === "review").length,
+        review: results.filter((r) => r.decision === "review" && r.status !== "invalid_response").length,
+        invalid_response: results.filter((r) => r.status === "invalid_response").length,
         by_class: byClass,
       },
       thresholds: { auto_accept: autoAccept, minimum_margin: minMargin },

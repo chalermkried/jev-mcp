@@ -200,7 +200,7 @@ Assign each item to one class from a shared catalog, in one batched request: the
 ```
 
 ```jsonc
-// live result, abridged: 4 items classified in one call for 820 input tokens
+// live result, abridged: 4 items classified in one call for 669 input tokens
 {
   "summary": { "items": 4, "auto": 4, "review": 0, "by_class": { "billing": 1, "technical": 2, "sales": 1 } },
   "results": [
@@ -212,7 +212,8 @@ Assign each item to one class from a shared catalog, in one batched request: the
 - Auto-acceptance requires both a top probability at or above `auto_accept` (default `0.85`) and a winner-to-runner-up `margin` at or above `minimum_margin` (default `0.5`); conservative by design, based on classification spike testing where choice wording swayed uncertain cases.
 - Include a `manual_review` class in your catalog if you want an explicit escape hatch; the tool never invents one.
 - Class descriptions carry the decision. Strong ones state a precise definition, what belongs, what does not, precedence over overlapping classes, and a short example.
-- Up to 250 classes and 64 items per call; item text is truncated at 2,000 characters.
+- Up to 250 classes and 64 items per call, with an 8,000 item-class budget per batch (split larger waves into multiple calls); item text is truncated at 2,000 characters.
+- A malformed or incomplete model response is reported as `status: invalid_response` on that item, never as model uncertainty.
 
 ## How the answers work
 

@@ -100,7 +100,7 @@ import {
 test("marginOf measures winner-to-runner-up gap", () => {
   assert.ok(Math.abs(marginOf({ a: 0.7, b: 0.2, c: 0.1 }) - 0.5) < 1e-9);
   assert.equal(marginOf({ a: 0.5, b: 0.5 }), 0);
-  assert.equal(marginOf({ only: 0.8 }), 0.8); // lone class: margin is its own probability
+  assert.equal(marginOf({ only: 0.8 }), 0); // lone probability: no runner-up, margin 0
   assert.equal(marginOf(undefined), 0);
   assert.equal(marginOf(null), 0);
 });
