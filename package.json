@@ -20,13 +20,13 @@
     "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
     "build": "tsc",
     "prepare": "npm run build",
-    "typecheck": "tsc --noEmit",
-    "test": "node --test test/unit.test.mjs test/mock.test.mjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.api.json",
+    "test": "node --test test/unit.test.mjs test/mock.test.mjs test/remote.test.mjs",
     "test:e2e": "node --test test/e2e.test.mjs"
   },
   "keywords": [
@@ -41,7 +41,7 @@
     "semantic-search"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.17.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@typesafe-ai/sdk": "^0.6.0",
     "zod": "^3.25.0",
     "ai": "^7.0.105"

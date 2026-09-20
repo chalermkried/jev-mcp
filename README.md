@@ -1,9 +1,13 @@
 # Jev MCP
 
-[![CI](https://github.com/jkudish/jev-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/jkudish/jev-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/chalermkried/jev-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/chalermkried/jev-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Fast, cheap, typed judgments from TypeSafe's Jev model, as MCP tools.
+
+This is a fork of [jkudish/jev-mcp](https://github.com/jkudish/jev-mcp) with a stateless remote MCP endpoint for Vercel. The ten upstream tools and local stdio transport are preserved. The original MIT license and copyright remain in [LICENSE](LICENSE).
+
+For hosted use, see [Remote MCP on Vercel](#remote-mcp-on-vercel). Agents choose when to call these generic tools and what action to take from their returned judgments; the server does not impose an agent workflow.
 
 Give your agent ten judgment tools:
 
@@ -37,7 +41,7 @@ This is early software. Expect rough edges. Issues and pull requests are welcome
 
 ## Install
 
-Requires Node.js 20 or newer and a TypeSafe API key from [console.typesafe.ai/settings/keys](https://console.typesafe.ai/settings/keys).
+Requires Node.js 22 or newer and a TypeSafe API key from [console.typesafe.ai/settings/keys](https://console.typesafe.ai/settings/keys). The Node minimum matches the existing AI SDK dependency. The published upstream package examples below remain available for local stdio use; to use this fork locally, build it and run `node dist/index.js`.
 
 ### Let an agent install it for you
 
@@ -122,6 +126,86 @@ args = ["-y", "@jkudish/jev-mcp"]
 </details>
 
 Some MCP clients filter the environment before spawning servers, which silently drops `TYPESAFE_API_KEY`. If the server reports a missing key, pass it explicitly as shown above.
+
+## Remote MCP on Vercel
+
+The hosted endpoint is **`POST /mcp`**, using the official MCP SDK's stateless Streamable HTTP transport with JSON responses. It registers exactly the same tools as stdio. Each tool call requires two independent headers:
+
+| Header | Purpose |
+| --- | --- |
+| `Authorization: Bearer <MCP_ACCESS_TOKEN>` | Authorizes access to this proxy. |
+| `X-Jev-Api-Key: <CALLER_JEV_API_KEY>` | Pays for that caller's Jev requests. Sent only to `https://api.typesafe.ai` as a bearer credential. |
+
+The Jev key is never a tool argument. Each request constructs its own TypeSafe client; remote requests never use `TYPESAFE_API_KEY`, `TYPESAFE_BASE_URL`, `JEV_PROVIDER`, or other local provider credentials. The proxy does not save keys or maintain MCP sessions. Initialization, notifications, and tool discovery need the MCP token but do not need a Jev key. All tool invocations require the Jev header, including calls that can finish without contacting Jev.
+
+### Client configuration
+
+Configure a client that supports Streamable HTTP and custom headers:
+
+```json
+{
+  "mcpServers": {
+    "jev-remote": {
+      "url": "https://<deployment>/mcp",
+      "headers": {
+        "Authorization": "Bearer <MCP_ACCESS_TOKEN>",
+        "X-Jev-Api-Key": "<CALLER_JEV_API_KEY>"
+      }
+    }
+  }
+}
+```
+
+Use your client's secret storage or environment substitution where available; never commit real credentials. Header interpolation syntax differs between clients. Static bearer tokens are an MVP access-control mechanism, not an OAuth service: clients that require OAuth discovery/login cannot connect with this configuration. Cross-origin browser clients are not supported by this MVP (no CORS preflight endpoint).
+
+### Deploy this fork
+
+1. Import **`chalermkried/jev-mcp`** into Vercel, using this branch for a preview. Choose **Other** as the framework preset, repository root as the root directory, and **Node.js 22.x or 24.x**. Keep the output directory unset. `vercel.json` configures the build, functions, and public routes.
+2. Generate at least 32 random bytes for an MCP access token, for example `node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"`. Share it only with authorized clients.
+3. Add `MCP_ACCESS_TOKENS` in Vercel's environment settings for the deployment environment you are testing. Separate tokens with commas to support rotation. Alternatively set `MCP_ACCESS_TOKEN_SHA256` to comma-separated SHA-256 hex digests of tokens, so the deployment holds only their digests. Both lists can coexist. Clients always send the original token. Comparisons use fixed-length digests and timing-safe equality; an empty allowlist fails closed.
+4. Optionally set `JEV_MCP_MODEL` (default `jev-latest`). Do not configure a shared Jev API key for the remote service. Each client supplies its own header.
+5. Deploy, then check `GET https://<deployment>/health` for `{"status":"ok"}`. Connect a client using both headers and verify one small tool call with your own Jev account. Vercel Deployment Protection is a separate layer: protected previews may require a Vercel bypass header in addition to the MCP headers.
+
+Use [`.env.example`](.env.example) as a reference. For local HTTP development, `npx vercel dev` serves the same function routes after Vercel project setup; local stdio remains `node dist/index.js` with the existing provider environment variables. Never commit `.env` files or `.vercel` credentials.
+
+To verify a deployment's MCP handshake from a shell with `MCP_ACCESS_TOKEN` already set:
+
+```bash
+curl https://<deployment>/mcp \
+  -H "Authorization: Bearer $MCP_ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"smoke-check","version":"1.0"}}}'
+```
+
+### Protection and error behavior
+
+| Condition | Response |
+| --- | --- |
+| Missing, malformed, or invalid MCP token | `401`, before any Jev request |
+| Missing/invalid access-token configuration | `503`; health remains available |
+| Missing, empty, or multiple Jev keys for `tools/call` | `400` |
+| Body over 256 KiB (262,144 bytes) | `413`, including streamed/chunked bodies and misleading `Content-Length` |
+| Malformed JSON or JSON-RPC batch | `400` |
+| Wrong content type / compressed body | `415` |
+| Disallowed `Origin` | `403` |
+| Eight requests already active in one process | `429` with `Retry-After: 1` |
+| `GET`, `DELETE`, or other methods on `/mcp` | `405`; this transport has no persistent SSE/session endpoint |
+| Jev authentication, rate-limit, or upstream failure | MCP tool result with `isError: true` and a sanitized message |
+
+Only protocol headers enter MCP request metadata; `Authorization`, `X-Jev-Api-Key`, and unrelated headers are removed. Remote SDK logging is disabled even if `TYPESAFE_LOG_LEVEL=debug` is set, and raw upstream errors are neither returned nor logged. No tool payload analytics are collected. Keep deployment-level logging integrations from capturing sensitive headers or bodies.
+
+The upstream origin is fixed and redirects are refused. Jev requests have a 15-second timeout and no automatic retries to avoid multiplying billable work. A 25-second request budget covers body reading and upstream calls; the Vercel MCP function has a 30-second duration limit. The concurrency ceiling is local to a warm process and does not limit aggregate traffic across instances. Vercel WAF/IP rules can add edge protection later; there is no database or distributed quota service.
+
+Requests without `Origin` are allowed for non-browser MCP clients. If present, `Origin` must match the request origin or an exact value in the comma-separated `MCP_ALLOWED_ORIGINS` setting. This does not enable browser CORS support.
+
+### Transport compatibility
+
+The existing MCP SDK v1.30 and Zod v3 tool schemas are retained. We evaluated [`vercel/mcp-handler`](https://github.com/vercel/mcp-handler): v1.1.0 pins the older MCP SDK v1.26, while v2 requires MCP SDK v2 and Zod v4. Using the [official SDK's Streamable HTTP transport](https://github.com/modelcontextprotocol/typescript-sdk/tree/v1.x) directly avoids either a downgrade or an unrelated schema migration. There is no custom JSON API and no Redis dependency. Vercel uses its [Web Standard function entrypoints](https://vercel.com/docs/functions/runtimes/node-js).
+
+This MVP supports the SDK v1 Streamable HTTP protocol versions, including `2025-11-25`; it does not implement the newer SDK v2 discovery protocol. Clients must negotiate a supported version. JSON responses, `202` notifications, and `405` for optional GET/DELETE session operations are intentional stateless behavior.
+
+Build and offline tests cover the shared stdio behavior, real MCP client handshake/discovery/calls, auth, concurrent key isolation, body limits, error redaction, and capacity recovery. Live Jev and hosted Vercel checks require a deployment and caller credentials and are separate from offline validation.
 
 ## The tools
 

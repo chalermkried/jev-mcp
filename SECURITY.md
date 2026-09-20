@@ -1,5 +1,11 @@
 # Security policy
 
+## Remote fork
+
+This fork adds a hosted proxy: tool inputs pass through the deployment operator's Vercel function before reaching TypeSafe. Remote callers supply an MCP access token and their own Jev key in headers. Keys are held only for the request and are not persisted by the application. The remote route disables SDK logging, removes credentials from MCP metadata, and replaces upstream errors with safe messages. Deployment operators must also keep external logging integrations from capturing credentials.
+
+See the [remote setup and protection details](README.md#remote-mcp-on-vercel) for body limits, origin checks, token rotation, and the per-process concurrency ceiling. Local stdio provider configuration remains separate. The reporting contact below belongs to the upstream project; deployment-specific issues should be reported privately to the operator of that deployment.
+
 ## Reporting a vulnerability
 
 Email **joey@jkudish.com** with "jev-mcp security" in the subject. Include:
