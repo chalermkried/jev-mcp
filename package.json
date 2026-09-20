@@ -7,7 +7,7 @@
   "author": "Joey Kudish",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jkudish/jev-mcp.git"
+    "url": "git+https://github.com/chalermkried/jev-mcp.git"
   },
   "bin": {
     "jev-mcp": "dist/index.js"
