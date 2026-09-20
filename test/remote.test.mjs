@@ -120,6 +120,56 @@ test("SDK client completes handshake, notification, discovery, and tool invocati
   }
 });
 
+test("remote jev_extract executes regex worker and returns a picked value", async () => {
+  const calls = [];
+  const handler = createRemoteHandler({
+    env,
+    fetch: async (_url, init) => {
+      const body = JSON.parse(init.body);
+      calls.push(body);
+      assert.deepEqual(Object.keys(body.questions.f0.criteria).sort(), ["c0", "none_of_them"]);
+      return Response.json({
+        answers: {
+          f0: {
+            type: "choice",
+            choice: "c0",
+            confidence: 0.99,
+            probabilities: { c0: 0.99, none_of_them: 0.01 },
+          },
+        },
+        usage: { input_tokens: 10, output_tokens: 5 },
+      });
+    },
+  });
+  const client = new Client({ name: "remote-extract-regression", version: "1.0" });
+  const transport = new StreamableHTTPClientTransport(new URL("https://mcp.example/mcp"), {
+    requestInit: { headers: { Authorization: `Bearer ${TOKEN}`, "X-Jev-Api-Key": KEY } },
+    fetch: (input, init) => handler(new Request(input, init)),
+  });
+  try {
+    await client.connect(transport);
+    const result = await client.callTool({
+      name: "jev_extract",
+      arguments: {
+        document: "Alice from Acme starts on 15 October 2026.",
+        fields: [{
+          id: "name",
+          pattern: "Alice|Bob",
+          description: "The person's name",
+        }],
+      },
+    });
+    assert.ok(!result.isError, JSON.stringify(result));
+    const payload = JSON.parse(result.content[0].text);
+    assert.equal(payload.tool, "jev_extract");
+    assert.equal(payload.results[0].value, "Alice");
+    assert.equal(payload.results[0].status, "auto");
+    assert.equal(calls.length, 1);
+  } finally {
+    await client.close();
+  }
+});
+
 test("overlapping requests use their own key and ignore all local provider environment", async () => {
   const overrides = { TYPESAFE_API_KEY: "shared-key-must-not-be-used", TYPESAFE_BASE_URL: "https://wrong.example", JEV_PROVIDER: "openrouter", OPENROUTER_API_KEY: "sk-or-unwanted", TYPESAFE_LOG_LEVEL: "debug" };
   const previous = Object.fromEntries(Object.keys(overrides).map((key) => [key, process.env[key]]));
