@@ -10,16 +10,16 @@ npm run build
 npm run typecheck
 ```
 
-Node.js 20 or newer. TypeScript, ESM, no runtime dependencies beyond the MCP SDK, the TypeSafe SDK, and zod.
+Node.js 22 or newer. TypeScript and ESM; dependencies are locked with npm. `src/tools.ts` registers the shared tools, `src/index.ts` starts stdio, and `src/remote.ts` provides the stateless HTTP handler used by Vercel's `api/` entrypoints. Keep remote credentials request-scoped and preserve the shared tool logic.
 
 ## Tests
 
 ```bash
-npm test            # unit tests, offline
+npm test            # unit, mock stdio, and remote security/protocol tests, offline
 npm run test:e2e    # live API tests, requires TYPESAFE_API_KEY
 ```
 
-Unit tests cover the pure helpers in `src/lib.ts` and run everywhere, including CI. End-to-end tests spawn the built server over stdio and call all three tools against the live TypeSafe API. They run in CI only when a `TYPESAFE_API_KEY` secret is configured, and locally only when the variable is set.
+Build before running tests. Unit tests cover the pure helpers in `src/lib.ts`; mock tests exercise the built stdio server against a local TypeSafe stub. Remote tests use the MCP client and mocked upstream fetches to verify auth, caller-key isolation, redaction, limits, and protocol handling without spending Jev credits. CI runs the offline suites on Node.js 22 and 24. Live end-to-end tests use the TypeSafe API and run only when `TYPESAFE_API_KEY` is configured.
 
 Both suites must pass before a pull request can merge. If you add behavior, add the test that would have caught its absence.
 
