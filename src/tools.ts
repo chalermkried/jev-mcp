@@ -877,7 +877,7 @@ server.registerTool(
 // Caller-supplied regex runs in a throwaway worker with a hard deadline, so a
 // catastrophic backtracking pattern can never hang the MCP server itself.
 const REGEX_WORKER_SOURCE = `
-import { parentPort, workerData } from "node:worker_threads";
+const { parentPort, workerData } = require("node:worker_threads");
 const { document, pattern, flags, maxCandidates, maxCandidateChars } = workerData;
 try {
   const re = new RegExp(pattern, flags);
