@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for considering a contribution. This is a small server with a narrow scope: three MCP tools over TypeSafe's Jev, with question design kept in the server so every caller gets well-formed judgments.
+Thanks for considering a contribution. This is a small server with a narrow scope: ten MCP judgment tools over TypeSafe's Jev, with question design kept in the server so every caller gets well-formed judgments.
 
 ## Development
 
@@ -25,12 +25,14 @@ Both suites must pass before a pull request can merge. If you add behavior, add 
 
 ## Pull requests
 
-- Keep changes small and scoped to one tool or one helper.
+- Keep changes small and scoped to one tool, one helper, or one focused concern.
 - New judgments belong in the tool questions and criteria, not in post-processing that second-guesses the model.
-- Do not add tools without opening an issue first describing the judgment you want and why the existing three do not cover it.
-- Update the README example for any tool whose arguments or results change.
+- Before adding a new tool, open an issue describing the judgment you want and why the existing tools do not cover it.
+- Update the README when a public tool argument, result shape, deployment requirement, or client configuration changes.
+- Never commit real access tokens, provider keys, `.env` files, or Vercel credentials.
 
 ## Notes
 
-- The three tools intentionally follow TypeSafe cookbook patterns. Link the relevant cookbook when you change a question design.
+- The tools intentionally follow TypeSafe judgment patterns. Link the relevant cookbook when you change a question design.
 - Thresholds are parameters, not constants. Keep defaults in one place and document changes.
+- Remote credentials must stay request-scoped. Do not introduce shared remote provider credentials or log raw request headers.

@@ -1,23 +1,43 @@
 # Security policy
 
-## Remote fork
-
-This fork adds a hosted proxy: tool inputs pass through the deployment operator's Vercel function before reaching TypeSafe. Remote callers supply an MCP access token and their own Jev key in headers. Keys are held only for the request and are not persisted by the application. The remote route disables SDK logging, removes credentials from MCP metadata, and replaces upstream errors with safe messages. Deployment operators must also keep external logging integrations from capturing credentials.
-
-See the [remote setup and protection details](README.md#remote-mcp-on-vercel) for body limits, origin checks, token rotation, and the per-process concurrency ceiling. Local stdio provider configuration remains separate. The reporting contact below belongs to the upstream project; deployment-specific issues should be reported privately to the operator of that deployment.
-
 ## Reporting a vulnerability
 
-Email **joey@jkudish.com** with "jev-mcp security" in the subject. Include:
+Please report vulnerabilities privately through GitHub Security Advisories:
 
-- the package version and how you installed it;
-- a minimal reproduction (tool, arguments, environment);
-- the impact you observed or expect.
+https://github.com/chalermkried/jev-mcp/security/advisories/new
 
-Please do not open public issues for vulnerabilities. There is no bug bounty and no committed response time; reports are handled as maintainer time allows.
+Do not open a public issue with exploit details, credentials, or other sensitive information. If the private report form is unavailable, contact the repository owner through GitHub first and wait for a private channel before sharing technical details.
+
+For vulnerabilities in the upstream npm package rather than this fork's hosted remote transport, see the original [jkudish/jev-mcp](https://github.com/jkudish/jev-mcp) project.
+
+## Hosted remote service
+
+This fork adds a hosted MCP proxy. Tool inputs pass through the deployment operator's Vercel function before reaching TypeSafe.
+
+Remote callers provide two independent credentials:
+
+- an owner-issued MCP access token in `Authorization: Bearer ...`;
+- their own Jev key in `X-Jev-Api-Key`.
+
+The application keeps both credentials request-scoped. It does not persist caller Jev keys or use a shared TypeSafe key for remote tool calls.
+
+The remote path also:
+
+- authenticates the MCP token before MCP processing;
+- removes credential and unrelated headers before constructing MCP request metadata;
+- fixes the remote Jev origin to `https://api.typesafe.ai` and refuses redirects;
+- disables remote SDK logging;
+- sanitizes upstream failures before returning them to callers;
+- bounds request bodies, concurrency, and request duration.
+
+See [Security and design](README.md#security-and-design) for the current architecture and deployment notes.
+
+Deployment operators are still responsible for configuring Vercel, log drains, observability integrations, proxies, and other infrastructure so sensitive request headers and bodies are not captured.
 
 ## Scope
 
-jev-mcp makes API calls to the TypeSafe service with the text you pass it. It does not execute browser actions, read files, or make other network calls. Treat any text you send as leaving your environment: it goes to TypeSafe, and to nowhere else.
+Security fixes for this fork target the current `main` branch and hosted deployment.
 
-Only the latest released version receives fixes. There is no support policy for older versions yet.
+Local stdio support remains inherited from the upstream project and uses local provider credentials. Treat any text sent to Jev as data leaving your environment: model inputs are sent to the configured provider.
+
+There is no bug bounty or guaranteed response time.
