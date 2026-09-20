@@ -3,11 +3,267 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Jev MCP</title>
+    <meta name="description" content="Connect your agent to Jev MCP. Endpoints, access tokens, and a ready-to-copy client configuration." />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#cfc8b9" />
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <title>Jev MCP — Connection manual</title>
+    <script>
+      // Apply a saved preference before the first paint. CSS handles system mode.
+      try {
+        const saved = localStorage.getItem("jev-mcp-theme");
+        if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+      } catch { /* System mode still works when storage is unavailable. */ }
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        --paper: #cfc8b9;
+        --ink: #1e241f;
+        --muted: #3d453d;
+        --line: #a39c8f;
+        --control: #5c6556;
+        --accent: #762e18;
+        --panel: #c2bbad;
+        --key: #354e34;
+        --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          color-scheme: dark;
+          --paper: #20231f;
+          --ink: #eeece3;
+          --muted: #a8afa0;
+          --line: #464c40;
+          --control: #828d78;
+          --accent: #ee9e75;
+          --panel: #292d26;
+          --key: #b5c8a5;
+        }
+      }
+      :root[data-theme="dark"] {
+        color-scheme: dark;
+        --paper: #20231f;
+        --ink: #eeece3;
+        --muted: #a8afa0;
+        --line: #464c40;
+        --control: #828d78;
+        --accent: #ee9e75;
+        --panel: #292d26;
+        --key: #b5c8a5;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.6 system-ui, sans-serif; }
+      ::selection { background: var(--accent); color: var(--paper); }
+      a { color: inherit; text-underline-offset: .25em; text-decoration-thickness: 1px; }
+      a:hover { color: var(--accent); }
+      button { font: inherit; color: inherit; cursor: pointer; }
+      :focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; }
+      [hidden] { display: none !important; }
+      .page { width: min(1120px, 100%); margin: auto; padding: 0 40px; }
+      .masthead { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 25px 0; border-bottom: 1px solid var(--line); }
+      .brand { display: flex; align-items: center; gap: 12px; font-weight: 650; letter-spacing: -.035em; }
+      .mark { display: grid; grid-template-columns: repeat(3, 5px); gap: 3px; transform: rotate(-90deg); }
+      .mark i { width: 5px; height: 5px; background: var(--accent); }
+      .mark i:nth-child(2), .mark i:nth-child(6) { visibility: hidden; }
+      .theme { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--control); border-radius: 5px; }
+      .theme button { min-height: 44px; min-width: 44px; padding: 5px 12px; border: 0; border-radius: 2px; background: transparent; font: 14px/1.5 system-ui, sans-serif; }
+      .theme button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+      .hero { display: grid; grid-template-columns: 1.1fr 1fr; align-items: end; gap: 52px; padding: 55px 0 44px; }
+      .eyebrow, .section-label { margin: 0; color: var(--muted); font: 600 15px/1.5 system-ui, sans-serif; }
+      h1 { margin: 18px 0 0; font: 650 64px/1.1 system-ui, sans-serif; letter-spacing: -.045em; }
+      h1 span { color: var(--accent); }
+      .intro { padding-bottom: 4px; }
+      .intro p { max-width: 390px; margin: 0; font-size: 18px; line-height: 1.6; text-wrap: pretty; }
+      .intro .byline { margin-top: 18px; color: var(--muted); font-size: 15px; }
+      .connection { display: grid; grid-template-columns: 1.1fr 1fr; gap: 52px; padding: 32px 0 36px; border-top: 1px solid var(--line); }
+      .connection > * { min-width: 0; }
+      .section-label { display: flex; gap: 12px; align-items: baseline; }
+      .section-label span { color: var(--accent); }
+      .access-list { list-style: none; padding: 0; margin: 24px 0 0; }
+      .access-list li + li { margin-top: 25px; }
+      h3 { margin: 0 0 7px; font-size: 18px; font-weight: 600; }
+      .access-list p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.7; }
+      .access-list a { color: var(--ink); }
+      code { font-family: var(--mono); font-size: .9em; overflow-wrap: anywhere; }
+      .header-name { display: inline-block; max-width: 100%; overflow-wrap: anywhere; margin-top: 11px; padding: 5px 8px; border: 1px solid var(--line); color: var(--accent); font: 13px/1.6 var(--mono); }
+      .config { margin-top: 22px; background: var(--panel); border-top: 3px solid var(--accent); }
+      .config-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 14px; }
+      .copy { flex-shrink: 0; min-height: 44px; border: 1px solid var(--control); border-radius: 3px; padding: 6px 12px; background: var(--paper); font: 14px/1.5 system-ui, sans-serif; }
+      .copy:hover { border-color: var(--accent); color: var(--accent); }
+      pre { margin: 0; padding: 20px 18px; white-space: pre-wrap; overflow-wrap: anywhere; font: 14px/1.7 var(--mono); tab-size: 2; }
+      pre code { font: inherit; overflow-wrap: inherit; }
+      .json-key { color: var(--key); }
+      .json-value { color: var(--accent); }
+      .caption { margin: 12px 0 0; color: var(--muted); font-size: 14px; line-height: 1.65; }
+      .copy-status { min-height: 1.6em; margin: 5px 0 0; color: var(--accent); font-size: 14px; }
+      .routes { border-top: 1px solid var(--line); padding: 26px 0 0; }
+      .route-table { width: 100%; border-collapse: collapse; margin-top: 18px; font-size: 15px; text-align: left; }
+      .route-table th { padding: 0 16px 10px 0; color: var(--muted); font-size: 14px; font-weight: 600; }
+      .route-table td { padding: 13px 16px 13px 0; border-top: 1px solid var(--line); vertical-align: top; }
+      .route-table td:first-child { white-space: nowrap; width: 19%; }
+      .route-table td:nth-child(2) { width: 40%; }
+      .method { color: var(--accent); font: 13px/1.5 var(--mono); display: inline-block; width: 46px; }
+      .route-table code { font-size: 14px; }
+      .route-table td:last-child { color: var(--muted); padding-right: 0; }
+      footer { display: flex; justify-content: space-between; align-items: baseline; gap: 24px; padding: 23px 0 30px; margin-top: 18px; border-top: 1px solid var(--ink); color: var(--muted); font-size: 12px; line-height: 1.7; }
+      footer p { margin: 0; }
+      footer p + p { margin-top: 5px; }
+      footer a { color: var(--ink); }
+      .footer-link { display: inline-block; padding-block: 10px; flex-shrink: 0; }
+      @media (max-width: 760px) {
+        .page { padding: 0 24px; }
+        .hero { grid-template-columns: 1fr; gap: 26px; padding: 38px 0 30px; }
+        h1 { font-size: clamp(42px, 9vw, 64px); }
+        .intro p { max-width: 480px; font-size: 16px; }
+        .intro .byline { margin-top: 12px; }
+        .connection { grid-template-columns: 1fr; gap: 35px; padding-top: 25px; }
+        .route-table td:first-child { width: auto; }
+        .route-table td:nth-child(2) { width: auto; }
+        footer { align-items: flex-start; flex-direction: column; gap: 12px; }
+      }
+      @media (max-width: 420px) {
+        .page { padding: 0 18px; }
+        .masthead { gap: 12px; flex-wrap: wrap; }
+        .theme button { padding-inline: 8px; }
+        .route-table th, .route-table td { padding-right: 10px; }
+        .route-table { font-size: 14px; }
+        .method { display: block; width: auto; }
+        footer { flex-direction: column; gap: 12px; }
+      }
+    </style>
   </head>
   <body>
-    <h1>Jev MCP</h1>
-    <p>Remote MCP endpoint: <code>/mcp</code></p>
-    <p>Health: <code>/health</code></p>
+    <div class="page">
+      <header class="masthead">
+        <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>jev / mcp</div>
+        <div class="theme" role="group" aria-label="Colour theme" hidden>
+          <button type="button" data-theme-choice="system" aria-pressed="true">System</button>
+          <button type="button" data-theme-choice="light" aria-pressed="false">Light</button>
+          <button type="button" data-theme-choice="dark" aria-pressed="false">Dark</button>
+        </div>
+      </header>
+      <main>
+        <div class="hero">
+          <div>
+            <p class="eyebrow">The connection manual</p>
+            <h1>Jev,<br /><span>connected.</span></h1>
+          </div>
+          <div class="intro">
+            <p>Give your agent tools to verify claims, classify information, and make decisions with confidence scores.</p>
+            <p class="byline">Jev model by <a href="https://typesafe.ai/">TypeSafe ↗</a></p>
+          </div>
+        </div>
+
+        <div class="connection">
+          <section aria-labelledby="access-heading">
+            <h2 id="access-heading" class="section-label"><span>01</span> Bring two keys</h2>
+            <ol class="access-list">
+              <li>
+                <h3>Request access to this server.</h3>
+                <p>Contact the owner through the <a href="https://github.com/chalermkried/jev-mcp">repository</a> for an MCP access token. The Bearer token is required on every <code>/mcp</code> request.</p>
+                <span class="header-name">Authorization: Bearer &lt;MCP_ACCESS_TOKEN&gt;</span>
+              </li>
+              <li>
+                <h3>Use your own Jev API key.</h3>
+                <p>Get your key from <a href="https://console.typesafe.ai/">TypeSafe</a>. Send it in the header below for every tool call. Jev usage is billed to your account.</p>
+                <span class="header-name">X-Jev-Api-Key: &lt;YOUR_JEV_API_KEY&gt;</span>
+              </li>
+            </ol>
+          </section>
+
+          <section aria-labelledby="connect-heading">
+            <h2 id="connect-heading" class="section-label"><span>02</span> Connect your client</h2>
+            <div class="config">
+              <div class="config-bar"><span>MCP configuration / JSON</span><button class="copy" type="button" hidden>Copy config</button></div>
+              <pre tabindex="0" aria-label="MCP client configuration"><code id="config">{
+  <span class="json-key">"mcpServers"</span>: {
+    <span class="json-key">"jev"</span>: {
+      <span class="json-key">"url"</span>: <span class="json-value">"<span id="endpoint">https://YOUR_HOST/mcp</span>"</span>,
+      <span class="json-key">"headers"</span>: {
+        <span class="json-key">"Authorization"</span>:
+          <span class="json-value">"Bearer &lt;MCP_ACCESS_TOKEN&gt;"</span>,
+        <span class="json-key">"X-Jev-Api-Key"</span>:
+          <span class="json-value">"&lt;YOUR_JEV_API_KEY&gt;"</span>
+      }
+    }
+  }
+}</code></pre>
+            </div>
+            <p class="caption">Replace both placeholders in your client. Use Streamable HTTP with custom headers; keep your keys private.</p>
+            <p class="copy-status" role="status" aria-live="polite"></p>
+          </section>
+        </div>
+
+        <section class="routes" aria-labelledby="routes-heading">
+          <h2 id="routes-heading" class="section-label"><span>03</span> Available paths</h2>
+          <table class="route-table">
+            <thead><tr><th scope="col">Path</th><th scope="col">Purpose</th><th scope="col">Access</th></tr></thead>
+            <tbody>
+              <tr><td><span class="method">GET</span><code>/</code></td><td>This connection manual</td><td>Public</td></tr>
+              <tr><td><span class="method">POST</span><code>/mcp</code></td><td>Connect, discover tools, and call them</td><td>Bearer token; Jev key for tool calls</td></tr>
+              <tr><td><span class="method">GET</span><a href="/health"><code>/health</code></a></td><td>Health check · <code>{"status":"ok"}</code></td><td>Public</td></tr>
+            </tbody>
+          </table>
+        </section>
+      </main>
+      <footer>
+        <div>
+          <p>Made by <a href="https://gear.surely.run/">Gear</a>, with help from Codex (OpenAI).</p>
+          <p>Forked from <a href="https://github.com/jkudish/jev-mcp">jkudish/jev-mcp</a> by Joey Kudish.</p>
+          <p>Jev is built by <a href="https://typesafe.ai/">TypeSafe</a>. This server is maintained independently.</p>
+        </div>
+        <a class="footer-link" href="https://github.com/chalermkried/jev-mcp" target="_blank" rel="noopener noreferrer" aria-label="Source and access requests (opens in a new tab)">Source &amp; access requests ↗</a>
+      </footer>
+    </div>
+    <script>
+      const root = document.documentElement;
+      const themeControls = document.querySelector(".theme");
+      const themeButtons = themeControls.querySelectorAll("button");
+      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+      function updateBrowserColour() {
+        const dark = root.dataset.theme === "dark" || (!root.dataset.theme && systemTheme.matches);
+        document.querySelector('meta[name="theme-color"]').content = dark ? "#20231f" : "#cfc8b9";
+      }
+      function setTheme(theme) {
+        if (theme === "light" || theme === "dark") root.dataset.theme = theme;
+        else delete root.dataset.theme;
+        updateBrowserColour();
+        themeButtons.forEach(button => {
+          button.setAttribute("aria-pressed", String(button.dataset.themeChoice === theme));
+        });
+      }
+      setTheme(root.dataset.theme || "system");
+      systemTheme.addEventListener("change", updateBrowserColour);
+      themeControls.hidden = false;
+      themeButtons.forEach(button => button.addEventListener("click", () => {
+        const theme = button.dataset.themeChoice;
+        setTheme(theme);
+        try {
+          if (theme === "system") localStorage.removeItem("jev-mcp-theme");
+          else localStorage.setItem("jev-mcp-theme", theme);
+        } catch { /* The selected theme still applies for this visit. */ }
+      }));
+
+      if (location.protocol === "https:" || location.protocol === "http:") {
+        document.getElementById("endpoint").textContent = location.origin + "/mcp";
+      }
+      const copyButton = document.querySelector(".copy");
+      const copyStatus = document.querySelector(".copy-status");
+      if (navigator.clipboard && window.isSecureContext) {
+        copyButton.hidden = false;
+        copyButton.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(document.getElementById("config").textContent);
+            copyStatus.textContent = "Copied. Add your keys in your client.";
+          } catch {
+            copyStatus.textContent = "Copy unavailable. Select the configuration and copy it manually.";
+          }
+        });
+      }
+    </script>
   </body>
 </html>
