@@ -127,6 +127,16 @@ The deployment accepts tokens configured through either:
 
 Both may be used together for token rotation.
 
+### OAuth 2.0 (for Gemini Spark, etc.)
+
+For clients that require an OAuth 2.0 flow (like Gemini Spark connected apps), the server supports an automatic approval flow.
+Configure these two environment variables:
+
+- `MCP_OAUTH_CLIENT_ID`
+- `MCP_OAUTH_CLIENT_SECRET`
+
+When the client connects via OAuth, it will be redirected and issued a code. The server will exchange that code for the first token configured in your `MCP_ACCESS_TOKENS`.
+
 ### Caller Jev key
 
 Every tool call must include:
@@ -145,6 +155,8 @@ Initialization and tool discovery require the MCP access token but do not requir
 | --- | --- | --- | --- |
 | `GET` | `/` | Hosted connection guide | Public |
 | `POST` | `/mcp` | MCP initialize, discovery, notifications, and tool calls | MCP bearer token; Jev key for tool calls |
+| `GET` | `/authorize` | OAuth 2.0 Authorization Endpoint | Public (requires valid client_id) |
+| `POST` | `/token` | OAuth 2.0 Token Endpoint | Requires client_secret |
 | `GET` | `/health` | Returns `{"status":"ok"}` | Public |
 
 The remote transport uses the official MCP SDK's stateless Streamable HTTP transport with JSON responses.
@@ -194,6 +206,10 @@ MCP_ACCESS_TOKEN_SHA256=
 # Optional exact Origin allowlist
 MCP_ALLOWED_ORIGINS=
 
+# Optional OAuth 2.0 credentials for Gemini Spark connected apps
+MCP_OAUTH_CLIENT_ID=
+MCP_OAUTH_CLIENT_SECRET=
+
 # Optional model override
 JEV_MCP_MODEL=jev-latest
 ```
@@ -203,6 +219,8 @@ Do **not** configure a shared TypeSafe API key for the hosted remote service. Re
 `vercel.json` configures the build and routes:
 
 - `/mcp` → `api/mcp.ts`
+- `/authorize` → `api/authorize.ts`
+- `/token` → `api/token.ts`
 - `/health` → `api/health.ts`
 - static files → `public/`
 
