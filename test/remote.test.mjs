@@ -56,7 +56,7 @@ test("missing, malformed, duplicate, and invalid MCP tokens cannot reach Jev", a
     assert.match(response.headers.get("www-authenticate"), /^Bearer/);
     assert.doesNotMatch(await response.text(), new RegExp(KEY));
   }
-  const unauthenticated = new Request("https://mcp.example/mcp", { method: "GET" });
+  const unauthenticated = new Request("https://mcp.example/mcp", { method: "POST" });
   assert.equal((await handler(unauthenticated)).status, 401);
   assert.equal(calls.length, 0);
 });
@@ -261,11 +261,13 @@ test("notifications return 202 and unsupported HTTP methods return 405 without s
   const notification = await handler(request({ jsonrpc: "2.0", method: "notifications/initialized" }));
   assert.equal(notification.status, 202);
   assert.equal(await notification.text(), "");
-  for (const method of ["GET", "DELETE", "PUT", "OPTIONS"]) {
+  for (const method of ["GET", "DELETE", "PUT"]) {
     const response = await handler(new Request("https://mcp.example/mcp", { method, headers: { Authorization: `Bearer ${TOKEN}` } }));
     assert.equal(response.status, 405);
     assert.equal(response.headers.get("allow"), "POST");
   }
+  const optionsResponse = await handler(new Request("https://mcp.example/mcp", { method: "OPTIONS", headers: { Authorization: `Bearer ${TOKEN}` } }));
+  assert.equal(optionsResponse.status, 204);
   assert.equal(calls.length, 0);
 });
 
