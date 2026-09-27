@@ -15,8 +15,6 @@ function getFirstMcpToken(env: NodeJS.ProcessEnv): string | null {
   return null;
 }
 
-export const config = { runtime: "edge" };
-
 export default async function (request: Request) {
   if (request.method !== "POST") {
     return new Response("Method not allowed", { status: 405, headers: { Allow: "POST" } });

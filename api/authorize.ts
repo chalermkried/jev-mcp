@@ -8,8 +8,6 @@ function errorRedirect(redirectUri: string, error: string, errorDescription: str
   return Response.redirect(url.toString(), 302);
 }
 
-export const config = { runtime: "edge" };
-
 export default async function (request: Request) {
   const url = new URL(request.url);
   const clientId = url.searchParams.get("client_id");
