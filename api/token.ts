@@ -15,10 +15,11 @@ function getFirstMcpToken(env: NodeJS.ProcessEnv): string | null {
   return null;
 }
 
-export default async function (request: Request) {
-  if (request.method !== "POST") {
-    return new Response("Method not allowed", { status: 405, headers: { Allow: "POST" } });
-  }
+export default {
+  async fetch(request: Request) {
+    if (request.method !== "POST") {
+      return new Response("Method not allowed", { status: 405, headers: { Allow: "POST" } });
+    }
 
     let clientId: string | null = null;
     let clientSecret: string | null = null;
@@ -114,4 +115,5 @@ export default async function (request: Request) {
     }, {
       headers: { "Cache-Control": "no-store" }
     });
+  }
 }

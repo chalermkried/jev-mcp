@@ -8,8 +8,9 @@ function errorRedirect(redirectUri: string, error: string, errorDescription: str
   return Response.redirect(url.toString(), 302);
 }
 
-export default async function (request: Request) {
-  const url = new URL(request.url);
+export default {
+  async fetch(request: Request) {
+    const url = new URL(request.url, "http://localhost");
   const clientId = url.searchParams.get("client_id");
   const redirectUri = url.searchParams.get("redirect_uri");
   const responseType = url.searchParams.get("response_type");
@@ -43,5 +44,6 @@ export default async function (request: Request) {
   redirect.searchParams.set("code", code);
   if (state) redirect.searchParams.set("state", state);
 
-  return Response.redirect(redirect.toString(), 302);
+    return Response.redirect(redirect.toString(), 302);
+  }
 }
