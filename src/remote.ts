@@ -67,6 +67,19 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
     }
     if (url.pathname !== "/mcp") return error(404, -32000, "Not found.");
 
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": request.headers.get("origin") || "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Jev-Api-Key, Accept, MCP-Protocol-Version",
+        }
+      });
+    }
+
+    if (request.method !== "POST") return error(405, -32000, "Use POST for stateless MCP.", { Allow: "POST" });
+
     const bearer = /^Bearer ([A-Za-z0-9._~+\/-]+=*)$/i.exec(request.headers.get("authorization") ?? "");
     if (!bearer) return error(401, -32000, "Unauthorized.", { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });
     const hashes = entries(env.MCP_ACCESS_TOKEN_SHA256);
@@ -84,7 +97,6 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
     if (origin && origin !== url.origin && !entries(env.MCP_ALLOWED_ORIGINS).includes(origin)) {
       return error(403, -32000, "Origin is not allowed.");
     }
-    if (request.method !== "POST") return error(405, -32000, "Use POST for stateless MCP.", { Allow: "POST" });
     if (request.headers.get("content-type")?.split(";", 1)[0].trim().toLowerCase() !== "application/json") {
       return error(415, -32000, "Content-Type must be application/json.");
     }

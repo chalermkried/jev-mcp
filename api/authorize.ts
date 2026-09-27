@@ -1,4 +1,11 @@
-import { generateCode } from "../src/oauth.js";
+import { createHmac } from "node:crypto";
+
+function generateCode(clientId: string, clientSecret: string, redirectUri: string): string {
+  const timestamp = Date.now().toString();
+  const payload = `${clientId}|${redirectUri}|${timestamp}`;
+  const signature = createHmac("sha256", clientSecret).update(payload).digest("hex");
+  return Buffer.from(`${payload}|${signature}`).toString("base64url");
+}
 
 function errorRedirect(redirectUri: string, error: string, errorDescription: string, state: string | null) {
   const url = new URL(redirectUri);

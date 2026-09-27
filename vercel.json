@@ -7,12 +7,17 @@
     "api/mcp.ts": { "maxDuration": 30, "supportsCancellation": true },
     "api/health.ts": { "maxDuration": 10 },
     "api/authorize.ts": { "maxDuration": 10 },
-    "api/token.ts": { "maxDuration": 10 }
+    "api/token.ts": { "maxDuration": 10 },
+    "api/discovery.ts": { "maxDuration": 10 },
+    "api/auth-test.ts": { "maxDuration": 10 }
   },
   "rewrites": [
     { "source": "/mcp", "destination": "/api/mcp" },
     { "source": "/health", "destination": "/api/health" },
     { "source": "/authorize", "destination": "/api/authorize" },
-    { "source": "/token", "destination": "/api/token" }
+    { "source": "/token", "destination": "/api/token" },
+    { "source": "/.well-known/oauth-authorization-server", "destination": "/api/discovery" },
+    { "source": "/.well-known/openid-configuration", "destination": "/api/discovery" },
+    { "source": "/auth-test", "destination": "/api/auth-test" }
   ]
 }

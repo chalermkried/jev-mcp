@@ -1,4 +1,26 @@
-import { validateCode } from "../src/oauth.js";
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function validateCode(code: string, clientId: string, clientSecret: string): boolean {
+  try {
+    const decoded = Buffer.from(code, "base64url").toString("utf-8");
+    const parts = decoded.split("|");
+    if (parts.length !== 4) return false;
+
+    const [cId, redirectUri, timestamp, signature] = parts;
+    if (cId !== clientId) return false;
+
+    // Code expires in 10 minutes (600,000 ms)
+    const time = parseInt(timestamp, 10);
+    if (isNaN(time) || Date.now() - time > 600000) return false;
+
+    const payload = `${cId}|${redirectUri}|${timestamp}`;
+    const expectedSignature = createHmac("sha256", clientSecret).update(payload).digest("hex");
+
+    return timingSafeEqual(Buffer.from(signature, "hex"), Buffer.from(expectedSignature, "hex"));
+  } catch {
+    return false;
+  }
+}
 
 function errorResponse(error: string, errorDescription: string, status = 400) {
   return Response.json({ error, error_description: errorDescription }, {
