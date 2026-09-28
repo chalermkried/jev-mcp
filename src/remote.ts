@@ -81,39 +81,9 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
     if (request.method !== "POST") return error(405, -32000, "Use POST for stateless MCP.", { Allow: "POST" });
 
     const authHeader = request.headers.get("authorization");
-
-    // Collect all headers into a string for debugging via the client UI
-    const allHeaders: Record<string, string> = {};
-    request.headers.forEach((value, key) => {
-      const lower = key.toLowerCase();
-      if (lower === "authorization" || lower === "x-jev-api-key" || lower === "cookie") {
-        allHeaders[key] = value ? "[REDACTED]" : "";
-      } else {
-        allHeaders[key] = value;
-      }
-    });
-    const headerStr = JSON.stringify(allHeaders);
-    console.log("[DEBUG] All incoming headers:", headerStr);
-    console.log("[DEBUG] Request URL:", request.url);
-
-    console.log("[DEBUG] Auth header received:", authHeader ? "yes" : "no", authHeader ? `length=${authHeader.length}, prefix=${authHeader.substring(0, 10)}` : "");
-
-    // We will clone the request to safely read the body for debugging,
-    // but only if it's a small request to avoid consuming too much memory
-    if (!authHeader) {
-      try {
-        const clonedRequest = request.clone();
-        const bodyText = await clonedRequest.text();
-        console.log("[DEBUG] Request Body (No Auth):", bodyText);
-      } catch (e) {
-        console.log("[DEBUG] Could not read request body:", e);
-      }
-    }
-
     const bearer = /^Bearer ([A-Za-z0-9._~+\/-]+=*)$/i.exec(authHeader ?? "");
     if (!bearer) {
-      console.log("[DEBUG] Regex match failed for auth header.");
-      return error(401, -32000, `Unauthorized. Debug info: headers=${headerStr}, url=${request.url}`, { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });
+      return error(401, -32000, "Unauthorized.", { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });
     }
     const hashes = entries(env.MCP_ACCESS_TOKEN_SHA256);
     if (hashes.some((value) => !/^[a-f0-9]{64}$/i.test(value))) {
@@ -156,13 +126,11 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
       if (Array.isArray(message)) return error(400, -32600, "JSON-RPC batches are not supported.");
 
       const isToolCall = typeof message === "object" && message !== null && "method" in message && message.method === "tools/call";
-
-      const bearerMatch = /^Bearer ([A-Za-z0-9._~+\/-]+=*)$/i.exec(authHeader ?? "");
       let apiKey = request.headers.get("x-jev-api-key")?.trim();
 
       // Fallback to Bearer token if X-Jev-Api-Key is not provided
-      if (!apiKey && bearerMatch && bearerMatch[1]) {
-        apiKey = bearerMatch[1];
+      if (!apiKey && bearer && bearer[1]) {
+        apiKey = bearer[1];
       }
 
       if (isToolCall && (!apiKey || !/^[\x21-\x7e]+$/.test(apiKey) || apiKey.includes(","))) {

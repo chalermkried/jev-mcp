@@ -56,11 +56,7 @@ test("missing, malformed, duplicate, and invalid MCP tokens cannot reach Jev", a
     assert.match(response.headers.get("www-authenticate"), /^Bearer/);
     assert.doesNotMatch(await response.text(), new RegExp(KEY));
   }
-  const unauthenticated = new Request("https://mcp.example/mcp", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(verify)
-  });
+  const unauthenticated = new Request("https://mcp.example/mcp", { method: "POST" });
   assert.equal((await handler(unauthenticated)).status, 401);
   assert.equal(calls.length, 0);
 });
