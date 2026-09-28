@@ -96,15 +96,23 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
     console.log("[DEBUG] All incoming headers:", headerStr);
     console.log("[DEBUG] Request URL:", request.url);
 
-    // Vercel Preview Protection consumes the Authorization header and passes it as x-vercel-proxy-signature
-    const authFallback = request.headers.get("x-vercel-proxy-signature");
-    const activeAuth = authHeader || authFallback;
+    console.log("[DEBUG] Auth header received:", authHeader ? "yes" : "no", authHeader ? `length=${authHeader.length}, prefix=${authHeader.substring(0, 10)}` : "");
 
-    console.log("[DEBUG] Active auth header resolved to:", activeAuth ? `length=${activeAuth.length}, prefix=${activeAuth.substring(0, 10)}` : "none");
+    // We will clone the request to safely read the body for debugging,
+    // but only if it's a small request to avoid consuming too much memory
+    if (!authHeader) {
+      try {
+        const clonedRequest = request.clone();
+        const bodyText = await clonedRequest.text();
+        console.log("[DEBUG] Request Body (No Auth):", bodyText);
+      } catch (e) {
+        console.log("[DEBUG] Could not read request body:", e);
+      }
+    }
 
-    const bearer = /^Bearer ([A-Za-z0-9._~+\/-]+=*)$/i.exec(activeAuth ?? "");
+    const bearer = /^Bearer ([A-Za-z0-9._~+\/-]+=*)$/i.exec(authHeader ?? "");
     if (!bearer) {
-      console.log("[DEBUG] Regex match failed for activeAuth:", activeAuth ? "value exists" : "no value");
+      console.log("[DEBUG] Regex match failed for auth header.");
       return error(401, -32000, `Unauthorized. Debug info: headers=${headerStr}, url=${request.url}`, { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });
     }
     const hashes = entries(env.MCP_ACCESS_TOKEN_SHA256);
