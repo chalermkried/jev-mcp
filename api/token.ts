@@ -131,9 +131,13 @@ export default {
       return errorResponse("server_error", "MCP_ACCESS_TOKENS is not configured", 500);
     }
 
+    // We provide a dummy refresh_token and long expiration time to satisfy Google Gemini's
+    // strict OAuth client requirements, even though our tokens are static API keys.
     return Response.json({
       access_token: token,
-      token_type: "Bearer"
+      token_type: "Bearer",
+      expires_in: 31536000, // 1 year (static token)
+      refresh_token: token // Dummy refresh token (same as access token for simplicity)
     }, {
       headers: { "Cache-Control": "no-store" }
     });

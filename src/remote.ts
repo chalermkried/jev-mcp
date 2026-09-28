@@ -120,15 +120,21 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
       // One operation per request bounds work and follows current Streamable HTTP.
       if (Array.isArray(message)) return error(400, -32600, "JSON-RPC batches are not supported.");
       const isToolCall = typeof message === "object" && message !== null && "method" in message && message.method === "tools/call";
-      const apiKey = request.headers.get("x-jev-api-key")?.trim();
+      let apiKey = request.headers.get("x-jev-api-key")?.trim();
+
+      // Fallback to Bearer token if X-Jev-Api-Key is not provided
+      if (!apiKey && bearer && bearer[1]) {
+        apiKey = bearer[1];
+      }
+
       if (isToolCall && (!apiKey || !/^[\x21-\x7e]+$/.test(apiKey) || apiKey.includes(","))) {
-        return error(400, -32600, "Supply one X-Jev-Api-Key header for tool calls.");
+        return error(400, -32600, "Supply one X-Jev-Api-Key header (or a valid Bearer token) for tool calls.");
       }
 
       server = new McpServer(serverInfo);
       const evaluator = isToolCall && apiKey
         ? createRemoteEvaluator(apiKey, signal, options.fetch)
-        : async () => { throw new Error("Supply X-Jev-Api-Key for tool calls."); };
+        : async () => { throw new Error("Supply X-Jev-Api-Key (or a valid Bearer token) for tool calls."); };
       registerJevTools(server, evaluator, env.JEV_MCP_MODEL ?? "jev-latest");
       const transport = new WebStandardStreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
