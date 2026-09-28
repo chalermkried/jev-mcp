@@ -81,10 +81,8 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
     if (request.method !== "POST") return error(405, -32000, "Use POST for stateless MCP.", { Allow: "POST" });
 
     const authHeader = request.headers.get("authorization");
-    console.log("[DEBUG] Auth header received:", authHeader ? "yes" : "no", authHeader ? `length=${authHeader.length}, prefix=${authHeader.substring(0, 10)}` : "");
     const bearer = /^Bearer ([A-Za-z0-9._~+\/-]+=*)$/i.exec(authHeader ?? "");
     if (!bearer) {
-      console.log("[DEBUG] Regex match failed for auth header.");
       return error(401, -32000, "Unauthorized.", { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });
     }
     const hashes = entries(env.MCP_ACCESS_TOKEN_SHA256);
@@ -97,10 +95,8 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
     // Compare every fixed-length digest, including after a match.
     const valid = allowed.reduce((match, candidate) => Number(timingSafeEqual(presented, candidate)) | match, 0);
     if (!valid) {
-      console.log("[DEBUG] Token validation failed. Token did not match expected digests.");
       return error(401, -32000, "Unauthorized.", { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });
     }
-    console.log("[DEBUG] Token validation successful.");
 
     const origin = request.headers.get("origin");
     if (origin && origin !== url.origin && !entries(env.MCP_ALLOWED_ORIGINS).includes(origin)) {
