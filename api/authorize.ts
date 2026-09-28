@@ -28,6 +28,16 @@ export default {
     return new Response("Missing redirect_uri", { status: 400 });
   }
 
+  // Prevent Open Redirect: Only allow whitelisted redirect URIs
+  const allowedRedirects = process.env.MCP_OAUTH_ALLOWED_REDIRECTS
+    ? process.env.MCP_OAUTH_ALLOWED_REDIRECTS.split(",").map(r => r.trim())
+    : ["https://oauth-redirect.googleusercontent.com/", "https://script.google.com/"];
+
+  const isAllowed = allowedRedirects.some(allowed => redirectUri.startsWith(allowed));
+  if (!isAllowed) {
+    return new Response("Invalid redirect_uri", { status: 400 });
+  }
+
   const configuredClientId = process.env.MCP_OAUTH_CLIENT_ID;
   const configuredClientSecret = process.env.MCP_OAUTH_CLIENT_SECRET;
 

@@ -154,12 +154,15 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
       }
       // One operation per request bounds work and follows current Streamable HTTP.
       if (Array.isArray(message)) return error(400, -32600, "JSON-RPC batches are not supported.");
+
       const isToolCall = typeof message === "object" && message !== null && "method" in message && message.method === "tools/call";
+
+      const bearerMatch = /^Bearer ([A-Za-z0-9._~+\/-]+=*)$/i.exec(authHeader ?? "");
       let apiKey = request.headers.get("x-jev-api-key")?.trim();
 
       // Fallback to Bearer token if X-Jev-Api-Key is not provided
-      if (!apiKey && bearer && bearer[1]) {
-        apiKey = bearer[1];
+      if (!apiKey && bearerMatch && bearerMatch[1]) {
+        apiKey = bearerMatch[1];
       }
 
       if (isToolCall && (!apiKey || !/^[\x21-\x7e]+$/.test(apiKey) || apiKey.includes(","))) {
