@@ -82,13 +82,30 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
 
     const authHeader = request.headers.get("authorization");
 
+    // Collect all headers into a string for debugging via the client UI
+    const allHeaders: Record<string, string> = {};
+    request.headers.forEach((value, key) => {
+      const lower = key.toLowerCase();
+      if (lower === "authorization" || lower === "x-jev-api-key" || lower === "cookie") {
+        allHeaders[key] = value ? "[REDACTED]" : "";
+      } else {
+        allHeaders[key] = value;
+      }
+    });
+    const headerStr = JSON.stringify(allHeaders);
+    console.log("[DEBUG] All incoming headers:", headerStr);
+    console.log("[DEBUG] Request URL:", request.url);
+
     // Vercel Preview Protection consumes the Authorization header and passes it as x-vercel-proxy-signature
     const authFallback = request.headers.get("x-vercel-proxy-signature");
     const activeAuth = authHeader || authFallback;
 
+    console.log("[DEBUG] Active auth header resolved to:", activeAuth ? `length=${activeAuth.length}, prefix=${activeAuth.substring(0, 10)}` : "none");
+
     const bearer = /^Bearer ([A-Za-z0-9._~+\/-]+=*)$/i.exec(activeAuth ?? "");
     if (!bearer) {
-      return error(401, -32000, "Unauthorized.", { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });
+      console.log("[DEBUG] Regex match failed for activeAuth:", activeAuth ? "value exists" : "no value");
+      return error(401, -32000, `Unauthorized. Debug info: headers=${headerStr}, url=${request.url}`, { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });
     }
     const hashes = entries(env.MCP_ACCESS_TOKEN_SHA256);
     if (hashes.some((value) => !/^[a-f0-9]{64}$/i.test(value))) {
