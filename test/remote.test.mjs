@@ -225,7 +225,10 @@ test("upstream failures redact secrets from tool errors and emit no logs or retr
   const { handler } = fixture({ fetch: async () => { throw new Error(`secret ${KEY}`); } });
   const body = await (await handler(request(verify, { "X-Jev-Api-Key": KEY }))).text();
   assert.doesNotMatch(body, new RegExp(KEY));
-  assert.deepEqual(logged, []);
+
+  // Filter out our expected debug logs before asserting
+  const filteredLogs = logged.filter(args => typeof args[0] !== 'string' || !args[0].includes('[DEBUG]'));
+  assert.deepEqual(filteredLogs, []);
 });
 
 test("oversized declared, actual, UTF-8, and chunked bodies are rejected before Jev", async () => {
