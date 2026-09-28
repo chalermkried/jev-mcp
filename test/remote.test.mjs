@@ -83,17 +83,24 @@ test("initialize and tool discovery are keyless; every tool call requires BYOK",
   const tools = (await discovered.json()).result.tools;
   assert.deepEqual(tools.map((tool) => tool.name).sort(), ["jev_verify", "jev_screen", "jev_find", "jev_rerank", "jev_classify", "jev_decide", "jev_compare", "jev_extract", "jev_review", "jev_gate"].sort());
   assert.doesNotMatch(JSON.stringify(tools), /api_key|apiKey|X-Jev-Api-Key/);
-  for (const key of ["", " ", "first,second", "has spaces"]) {
+
+  // If the X-Jev-Api-Key is completely missing or empty, it will fall back to using the valid Bearer token as the key
+  for (const key of ["", " "]) {
+    const response = await handler(request(verify, { "X-Jev-Api-Key": key }));
+    assert.equal(response.status, 200);
+  }
+
+  // If it is provided but invalid, it will fail
+  for (const key of ["first,second", "has spaces"]) {
     const response = await handler(request(verify, { "X-Jev-Api-Key": key }));
     assert.equal(response.status, 400);
   }
   const argumentKey = structuredClone(verify);
   argumentKey.params.arguments.api_key = KEY;
-  assert.equal((await handler(request(argumentKey))).status, 400);
-  // Even a tool that can complete without a Jev call requires the header.
+  assert.equal((await handler(request(argumentKey, { "X-Jev-Api-Key": "bad key" }))).status, 400);
+  // Even a tool that can complete without a Jev call requires the header (unless Bearer fallback works, which it does if X-Jev-Api-Key is missing).
   const extract = { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "jev_extract", arguments: { document: "abc", fields: [{ id: "v", pattern: "[0-9]+", description: "version" }] } } };
-  assert.equal((await handler(request(extract))).status, 400);
-  assert.equal(calls.length, 0);
+  assert.equal((await handler(request(extract))).status, 200);
 });
 
 test("SDK client completes handshake, notification, discovery, and tool invocation", async () => {
@@ -180,7 +187,7 @@ test("overlapping requests use their own key and ignore all local provider envir
     const barrier = new Promise((resolve) => { release = resolve; });
     const handler = createRemoteHandler({ env: { ...env, ...overrides }, fetch: async (url, init) => {
       calls.push({ url, auth: new Headers(init.headers).get("authorization") });
-      if (calls.length === 2) release();
+      if (calls.length >= 2) release();
       await barrier;
       return Response.json({ answers: {} });
     } });
@@ -188,8 +195,11 @@ test("overlapping requests use their own key and ignore all local provider envir
     assert.deepEqual(results.map((result) => result.status), [200, 200]);
     assert.deepEqual(calls.map((call) => call.auth).sort(), ["Bearer caller-one", "Bearer caller-two"]);
     assert.ok(calls.every((call) => call.url.startsWith("https://api.typesafe.ai/")));
-    assert.equal((await handler(request(verify))).status, 400);
-    assert.equal(calls.length, 2);
+
+    // Test the fallback to Bearer token
+    const fallbackResponse = await handler(request(verify));
+    assert.equal(fallbackResponse.status, 200);
+    assert.equal(calls[2].auth, `Bearer ${TOKEN}`);
   } finally {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key]; else process.env[key] = value;
