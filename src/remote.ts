@@ -118,14 +118,20 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
       if (bearer) {
         const hashes = entries(env.MCP_ACCESS_TOKEN_SHA256);
         if (hashes.some((value) => !/^[a-f0-9]{64}$/i.test(value))) {
+          console.error(`[jev-mcp debug] /mcp method=${method} - MCP_ACCESS_TOKEN_SHA256 is invalid`);
           return error(503, -32000, "MCP access is not configured.");
         }
         const allowed = [...entries(env.MCP_ACCESS_TOKENS).map(digest), ...hashes.map((value) => Buffer.from(value, "hex"))];
-        if (allowed.length === 0) return error(503, -32000, "MCP access is not configured.");
+        if (allowed.length === 0) {
+          console.error(`[jev-mcp debug] /mcp method=${method} - No allowed tokens configured`);
+          return error(503, -32000, "MCP access is not configured.");
+        }
         const presented = digest(bearer[1]);
         const valid = allowed.reduce((match, candidate) => Number(timingSafeEqual(presented, candidate)) | match, 0);
         if (valid) validBearer = true;
       }
+
+      console.error(`[jev-mcp debug] /mcp method=${method} isHandshakeMethod=${isHandshakeMethod} hasBearer=${!!bearer} validBearer=${validBearer}`);
 
       if (!isHandshakeMethod && !validBearer) {
         return error(401, -32000, "Unauthorized.", { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });

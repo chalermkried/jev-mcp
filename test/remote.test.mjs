@@ -231,7 +231,7 @@ test("upstream failures redact secrets from tool errors and emit no logs or retr
   assert.doesNotMatch(body, new RegExp(KEY));
 
   // Filter out our expected debug logs before asserting
-  const filteredLogs = logged.filter(args => typeof args[0] !== 'string' || !args[0].includes('[DEBUG]'));
+  const filteredLogs = logged.filter(args => typeof args[0] !== 'string' || !args[0].includes('[jev-mcp debug]'));
   assert.deepEqual(filteredLogs, []);
 });
 
