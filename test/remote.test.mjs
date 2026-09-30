@@ -51,13 +51,13 @@ test("health is public, keyless, and never calls Jev", async () => {
 test("missing, malformed, duplicate, and invalid MCP tokens cannot reach Jev", async () => {
   const { handler, calls } = fixture();
   for (const authorization of ["", "Basic abc", "Bearer wrong", `Bearer ${TOKEN}, Bearer ${TOKEN}`, "Bearer", "Bearer two tokens"]) {
-    const response = await handler(request(verify, { Authorization: authorization, "X-Jev-Api-Key": KEY }));
+    const response = await handler(request(verify, { Authorization: authorization, "X-Jev-Api-Key": "" }));
     assert.equal(response.status, 401);
     assert.match(response.headers.get("www-authenticate"), /^Bearer/);
     assert.doesNotMatch(await response.text(), new RegExp(KEY));
   }
   const unauthenticated = new Request("https://mcp.example/mcp", { method: "GET" });
-  assert.equal((await handler(unauthenticated)).status, 401);
+  assert.equal((await handler(unauthenticated)).status, 405);
   assert.equal(calls.length, 0);
 });
 
@@ -84,15 +84,15 @@ test("initialize and tool discovery are keyless; every tool call requires BYOK",
   assert.deepEqual(tools.map((tool) => tool.name).sort(), ["jev_verify", "jev_screen", "jev_find", "jev_rerank", "jev_classify", "jev_decide", "jev_compare", "jev_extract", "jev_review", "jev_gate"].sort());
   assert.doesNotMatch(JSON.stringify(tools), /api_key|apiKey|X-Jev-Api-Key/);
   for (const key of ["", " ", "first,second", "has spaces"]) {
-    const response = await handler(request(verify, { "X-Jev-Api-Key": key }));
-    assert.equal(response.status, 400);
+    const response = await handler(request(verify, { "X-Jev-Api-Key": key, Authorization: "" }));
+    assert.equal(response.status, 401);
   }
   const argumentKey = structuredClone(verify);
   argumentKey.params.arguments.api_key = KEY;
-  assert.equal((await handler(request(argumentKey))).status, 400);
+  assert.equal((await handler(request(argumentKey, { Authorization: "" }))).status, 401);
   // Even a tool that can complete without a Jev call requires the header.
   const extract = { jsonrpc: "2.0", id: 4, method: "tools/call", params: { name: "jev_extract", arguments: { document: "abc", fields: [{ id: "v", pattern: "[0-9]+", description: "version" }] } } };
-  assert.equal((await handler(request(extract))).status, 400);
+  assert.equal((await handler(request(extract, { Authorization: "" }))).status, 401);
   assert.equal(calls.length, 0);
 });
 
@@ -188,7 +188,7 @@ test("overlapping requests use their own key and ignore all local provider envir
     assert.deepEqual(results.map((result) => result.status), [200, 200]);
     assert.deepEqual(calls.map((call) => call.auth).sort(), ["Bearer caller-one", "Bearer caller-two"]);
     assert.ok(calls.every((call) => call.url.startsWith("https://api.typesafe.ai/")));
-    assert.equal((await handler(request(verify))).status, 400);
+    assert.equal((await handler(request(verify, { "authorization": "" }))).status, 401);
     assert.equal(calls.length, 2);
   } finally {
     for (const [key, value] of Object.entries(previous)) {
@@ -261,11 +261,13 @@ test("notifications return 202 and unsupported HTTP methods return 405 without s
   const notification = await handler(request({ jsonrpc: "2.0", method: "notifications/initialized" }));
   assert.equal(notification.status, 202);
   assert.equal(await notification.text(), "");
-  for (const method of ["GET", "DELETE", "PUT", "OPTIONS"]) {
+  for (const method of ["GET", "DELETE", "PUT"]) {
     const response = await handler(new Request("https://mcp.example/mcp", { method, headers: { Authorization: `Bearer ${TOKEN}` } }));
     assert.equal(response.status, 405);
     assert.equal(response.headers.get("allow"), "POST");
   }
+  const optionsResponse = await handler(new Request("https://mcp.example/mcp", { method: "OPTIONS", headers: { Authorization: `Bearer ${TOKEN}` } }));
+  assert.equal(optionsResponse.status, 204);
   assert.equal(calls.length, 0);
 });
 

@@ -80,7 +80,19 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
 
     if (request.method !== "POST") return error(405, -32000, "Use POST for stateless MCP.", { Allow: "POST" });
 
-    const authHeader = request.headers.get("authorization");
+    const bearer = /^Bearer ([A-Za-z0-9._~+\/-]+=*)$/i.exec(request.headers.get("authorization") ?? "");
+    if (!bearer) return error(401, -32000, "Unauthorized.", { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });
+    const hashes = entries(env.MCP_ACCESS_TOKEN_SHA256);
+    if (hashes.some((value) => !/^[a-f0-9]{64}$/i.test(value))) {
+      return error(503, -32000, "MCP access is not configured.");
+    }
+    const allowed = [...entries(env.MCP_ACCESS_TOKENS).map(digest), ...hashes.map((value) => Buffer.from(value, "hex"))];
+    if (allowed.length === 0) return error(503, -32000, "MCP access is not configured.");
+    const presented = digest(bearer[1]);
+    // Compare every fixed-length digest, including after a match.
+    const valid = allowed.reduce((match, candidate) => Number(timingSafeEqual(presented, candidate)) | match, 0);
+    if (!valid) return error(401, -32000, "Unauthorized.", { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });
+
     const origin = request.headers.get("origin");
     if (origin && origin !== url.origin && !entries(env.MCP_ALLOWED_ORIGINS).includes(origin)) {
       return error(403, -32000, "Origin is not allowed.");
@@ -107,40 +119,11 @@ export function createRemoteHandler(options: { env?: NodeJS.ProcessEnv; fetch?: 
       }
       // One operation per request bounds work and follows current Streamable HTTP.
       if (Array.isArray(message)) return error(400, -32600, "JSON-RPC batches are not supported.");
-
-      const method = typeof message === "object" && message !== null && "method" in message ? message.method : undefined;
-      const isToolCall = method === "tools/call";
-      const isHandshakeMethod = method === "initialize" || method === "notifications/initialized";
-
-      const bearer = /^Bearer ([A-Za-z0-9._~+\/-]+=*)$/i.exec(authHeader ?? "");
-
-      let validBearer = false;
-      if (bearer) {
-        const hashes = entries(env.MCP_ACCESS_TOKEN_SHA256);
-        if (hashes.some((value) => !/^[a-f0-9]{64}$/i.test(value))) {
-          console.error(`[jev-mcp debug] /mcp method=${method} - MCP_ACCESS_TOKEN_SHA256 is invalid`);
-          return error(503, -32000, "MCP access is not configured.");
-        }
-        const allowed = [...entries(env.MCP_ACCESS_TOKENS).map(digest), ...hashes.map((value) => Buffer.from(value, "hex"))];
-        if (allowed.length === 0) {
-          console.error(`[jev-mcp debug] /mcp method=${method} - No allowed tokens configured`);
-          return error(503, -32000, "MCP access is not configured.");
-        }
-        const presented = digest(bearer[1]);
-        const valid = allowed.reduce((match, candidate) => Number(timingSafeEqual(presented, candidate)) | match, 0);
-        if (valid) validBearer = true;
-      }
-
-      console.error(`[jev-mcp debug] /mcp method=${method} isHandshakeMethod=${isHandshakeMethod} hasBearer=${!!bearer} validBearer=${validBearer}`);
-
-      if (!isHandshakeMethod && !validBearer) {
-        return error(401, -32000, "Unauthorized.", { "WWW-Authenticate": 'Bearer realm="jev-mcp"' });
-      }
-
+      const isToolCall = typeof message === "object" && message !== null && "method" in message && message.method === "tools/call";
       let apiKey = request.headers.get("x-jev-api-key")?.trim();
 
       // Fallback to Bearer token if X-Jev-Api-Key is not provided
-      if (!apiKey && validBearer && bearer) {
+      if (!apiKey && bearer && bearer[1]) {
         apiKey = bearer[1];
       }
 
